@@ -13,18 +13,16 @@
     <h3>(load an image)</h3>
 
     <button id="loadOpen" class="loadbutton"
-            data-iiif-content="http://127.0.0.1:5000/img/open.jpg">Show open image</button> |
+            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/open.jpg">Show open image</button> |
     <button id="loadProtected" class="loadbutton"
-            data-iiif-content="http://127.0.0.1:5000/img/protected.jpg">Show protected image</button>
-    <hr/>
-    <div id="viewer">
+            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/protected.jpg">Show protected image</button>
 
+    <div id="wrapper">
+        <div id="viewer"></div>
+        <div id="log"></div>
     </div>
 
-
-    <div id="usermessages"></div>
     <iframe id="commsFrame" width="100px" height="60px"></iframe>
-
 
     <div id="beforeOpenCookieServiceModal" class="modal">
         <div class="modal-content">

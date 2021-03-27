@@ -18,7 +18,7 @@ function selectImage(imageUri){
     loadServiceForImage(imageUri).then(infoResponse => {
         if(infoResponse && infoResponse.status === 401){
             // We probed the image service description and got an HTTP 401; we need to send the user on an auth journey
-            doAuthChain(infoResponse).then(r =>
+            doAuthChain(infoResponse).then(() =>
                 log("-END---------------------------------------------\r\n")
             );
         }
@@ -81,8 +81,7 @@ function getServiceResponse(imageUri, token){
 
 function renderImage(imageUri){
     log("Simplest possible viewer - just emit an image tag.");
-    let imgTag = "<img src='" + imageUri + "' />";
-    document.getElementById("viewer").innerHTML = imgTag;
+    document.getElementById("viewer").innerHTML = "<img src='" + imageUri + "' alt='example' />";
 }
 
 
@@ -112,7 +111,7 @@ async function attemptImageWithToken(authService, imageUri){
     if(tokenMessage && tokenMessage.accessToken){
         let withTokenInfoResponse = await loadServiceForImage(imageUri, tokenMessage.accessToken);
         log("Info request with token resulted in " + withTokenInfoResponse.status);
-        if(withTokenInfoResponse.status == 200){
+        if(withTokenInfoResponse.status === 200){
             renderImage(imageUri);
             return true;
         }
@@ -153,6 +152,7 @@ function openTokenService(tokenService){
             "serviceOrigin": serviceOrigin
         };
         let tokenUrl = tokenService + "?messageId=" + messageId + "&origin=" + getOrigin();
+        log("Setting the iframe src to " + tokenUrl);
         document.getElementById("commsFrame").src = tokenUrl;
 
         // reject any unhandled messages after a configurable timeout
@@ -278,7 +278,7 @@ function hideModals(){
 }
 
 function log(text) {
-    let logDiv = document.querySelector("#usermessages");
+    let logDiv = document.querySelector("#log");
     let p = document.createElement("p");
     p.innerText = " - " + text;
     logDiv.appendChild(p);
