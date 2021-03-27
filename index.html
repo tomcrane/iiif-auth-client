@@ -8,18 +8,23 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-    <select id="sourceList">
-        <option value="">test images...</option>
-    </select>
-    <button id="reloadSource">Reload</button>
-    <h1>Loading...</h1>
-    <p><a href="" id="infoJson" target="_blank">Link to info.json</a></p>
-    <div id="viewer"></div>
+    <h2>Third party cookie test</h2>
+
+    <h3>(load an image)</h3>
+
+    <button id="loadOpen" class="loadbutton"
+            data-iiif-content="http://127.0.0.1:5000/img/open.jpg">Show open image</button> |
+    <button id="loadProtected" class="loadbutton"
+            data-iiif-content="http://127.0.0.1:5000/img/protected.jpg">Show protected image</button>
+    <hr/>
+    <div id="viewer">
+
+    </div>
+
+
     <div id="usermessages"></div>
     <iframe id="commsFrame" width="100px" height="60px"></iframe>
-    <div id="downloads">
-        <a id="largeDownload" target="_blank">Download a large image</a>
-    </div>
+
 
     <div id="beforeOpenCookieServiceModal" class="modal">
         <div class="modal-content">
@@ -43,8 +48,6 @@
         </div>
     </div>
 
-    <script src="openseadragon/openseadragon.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dashjs/2.9.0/dash.all.min.js"></script>
     <script src="auth.js"></script>
 
 </body>

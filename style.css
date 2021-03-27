@@ -3,15 +3,19 @@ body {
 }
 
 #viewer {
-    width: 400px;
+    width: 500px;
     height: 400px;
     float:left;
     border:1px solid black;
+    background-color: #888888;
 }
 
-video, audio {
-    width:400px;
+
+#viewer img {
+    width: 490px;
+    margin:5px;
 }
+
 
 #usermessages {
     padding: 5px; 
@@ -67,15 +71,8 @@ h1 {
     cursor: pointer;
 }
 
-#sourceList, #reloadSource {
-    display:none;
-}
-
 #commsFrame {
     display:none;
     width:300px;
     height:100px;
-}
-#downloads {
-    clear: both;
 }
