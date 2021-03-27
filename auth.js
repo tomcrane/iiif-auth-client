@@ -173,6 +173,7 @@ function openTokenService(tokenService){
 function receiveMessage(event) {
     log("PostMessage Event received, origin=" + event.origin);
     log(JSON.stringify(event.data));
+    // two kinds of message here - the token original, and the "show me to request storage access"
     if(event.data.hasOwnProperty("messageId")){
         log("Received message with id " + event.data.messageId);
         let message = messages[event.data.messageId];
