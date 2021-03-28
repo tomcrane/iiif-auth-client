@@ -117,7 +117,7 @@ async function attemptImageWithToken(authService, imageUri, isRetry){
             return true;
         }
     } else if (tokenMessage.error && tokenMessage.error == "missingCredentials"){
-        if(tokenMessage.userInteractionResult == "userGrantedAccess" && tokenMessage.frameHasStorageAccess){
+        if(tokenMessage.userInteractionState == "userGrantedAccess" && tokenMessage.frameHasStorageAccess){
             log("We've just been given storage access. Try the token service again.");
             let success = await attemptImageWithToken(authService, infoResponse.requestedUri, true);
             if(success){
@@ -187,6 +187,12 @@ function receiveMessage(event) {
     // This is not part of the normal flow, just added it get log messages from the frame displayed in our test viewer.
     if(event.data.log){
         log("POSTMESSAGE IFRAME LOG: " + event.data.log, "33a");
+        return;
+    }
+
+    // We've received a message from the postMessage iframe asking us to make it visible to the user
+    if("show" === event.data.userInteractionRequest){
+        showServerInteractionModal();
         return;
     }
 
@@ -288,6 +294,13 @@ function showFailureMessage(authService){
     if(authService.failureDescription){
         modal.querySelector("#failureDescription").innerText = sanitise(authService.failureDescription, true);
     }
+    modal.style.display = "block";
+}
+
+function showServerInteractionModal(){
+    hideModals();
+    let modal = document.getElementById("serverInteractionModal");
+    modal.querySelector(".close").onclick = (ev => hideModals());
     modal.style.display = "block";
 }
 

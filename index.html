@@ -26,11 +26,6 @@
         <div id="log"></div>
     </div>
 
-    <iframe id="commsFrame" width="100px" height="60px"
-            sandbox="allow-storage-access-by-user-activation
-                 allow-scripts
-                 allow-same-origin"></iframe>
-
     <div id="beforeOpenCookieServiceModal" class="modal">
         <div class="modal-content">
             <span class="close">&times;</span>
@@ -40,6 +35,14 @@
             <hr/>
             <button id="csCancel">Cancel</button><!-- string not provided by service -->
             <button id="csConfirm">*confirmLabel*</button>
+        </div>
+    </div>
+
+    <div id="serverInteractionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <iframe id="commsFrame" width="300px" height="60px"
+                    sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin"></iframe>
         </div>
     </div>
 
