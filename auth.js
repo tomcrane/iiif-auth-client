@@ -119,7 +119,7 @@ async function attemptImageWithToken(authService, imageUri, isRetry){
     } else if (tokenMessage.error && tokenMessage.error == "missingCredentials"){
         if(tokenMessage.userInteractionState == "userGrantedAccess" && tokenMessage.frameHasStorageAccess){
             log("We've just been given storage access. Try the token service again.");
-            let success = await attemptImageWithToken(authService, infoResponse.requestedUri, true);
+            let success = await attemptImageWithToken(authService, imageUri, true);
             if(success){
                 log("Second time round we got a working token!")
                 return true;
