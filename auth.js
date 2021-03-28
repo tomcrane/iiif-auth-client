@@ -168,7 +168,7 @@ function openTokenService(tokenService, isRetry){
         document.getElementById("commsFrame").src = tokenUrl;
 
         // reject any unhandled messages after a configurable timeout
-        const postMessageTimeout = 5000;
+        const postMessageTimeout = 60000; // increase this to 1 minute. Maybe indefinite?
         setTimeout(() => {
             if(messages[messageId]){
                 messages[messageId].reject(
@@ -193,6 +193,12 @@ function receiveMessage(event) {
     // We've received a message from the postMessage iframe asking us to make it visible to the user
     if("show" === event.data.userInteractionRequest){
         showServerInteractionModal();
+        return;
+    }
+
+    // We've received a message from the postMessage iframe saying that the user clicked within the iframe
+    if("clicked" === event.data.userInteractionRequest){
+        hideModals(); // close the popup
         return;
     }
 
