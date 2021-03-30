@@ -124,12 +124,12 @@ async function attemptImageWithToken(authService, imageUri, isRetry){
                 log("Second time round we got a working token!")
                 return true;
             }
-        } else if (tokenMessage.userInteractionResult == "userDeniedAccess"){
-            alert("You denied the iframe access to the storage API");
-        } else if (tokenMessage.userInteractionResult == "stillNoCredentials") {
+        } else if (tokenMessage.userInteractionState == "userDeniedAccess"){
+            log("User denied the iframe access to the storage API.");
+        } else if (tokenMessage.userInteractionState == "stillNoCredentials") {
+            log("Server is still not seeing user's cookies.");
             alert("Server is still not seeing your cookies. Do you have _ALL_ third party cookies disabled?");
         }
-
     }
 
     log("Didn't get a 200 info response.")
