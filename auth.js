@@ -126,7 +126,7 @@ async function attemptImageWithToken(authService, imageUri, isRetry){
             }
         } else if (tokenMessage.userInteractionState == "requestStorageAccessFailed"){
             log("We failed to obtain storage access, let's send the user to really interact with the server in a first party context")
-            let firstPartyWindow = openContentProviderWindow(authService.storageAccessInteractionPage);
+            let firstPartyWindow = window.open(authService.storageAccessInteractionPage);
             await userInteractionWithContentProvider(firstPartyWindow);
             let success = await attemptImageWithToken(authService, imageUri, true);
             if(success) {
