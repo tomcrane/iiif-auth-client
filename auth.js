@@ -117,15 +117,21 @@ async function attemptImageWithToken(authService, imageUri, isRetry){
             return true;
         }
     } else if (tokenMessage.error && tokenMessage.error == "missingCredentials"){
-        if(tokenMessage.userInteractionState == "userGrantedAccess" && tokenMessage.frameHasStorageAccess){
+        if(tokenMessage.userInteractionState == "requestStorageAccessSucceeded" && tokenMessage.frameHasStorageAccess){
             log("We've just been given storage access. Try the token service again.");
             let success = await attemptImageWithToken(authService, imageUri, true);
             if(success){
                 log("Second time round we got a working token!")
                 return true;
             }
-        } else if (tokenMessage.userInteractionState == "userDeniedAccess"){
-            log("User denied the iframe access to the storage API.");
+        } else if (tokenMessage.userInteractionState == "requestStorageAccessFailed"){
+            log("We failed to obtain storage access, let's send the user to really interact with the server in a first party context")
+            await userInteractionWithContentProvider(authService.storageAccessInteractionPage);
+            let success = await attemptImageWithToken(authService, imageUri, true);
+            if(success) {
+                log("Second time round trying the image with a token succeeded.")
+                return true;
+            }
         } else if (tokenMessage.userInteractionState == "stillNoCredentials") {
             log("Server is still not seeing user's cookies.");
             alert("Server is still not seeing your cookies. Do you have _ALL_ third party cookies disabled?");
