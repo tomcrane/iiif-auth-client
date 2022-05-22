@@ -15,6 +15,98 @@ let messages = {};
 let sourcesMap = {};
 window.addEventListener("message", receiveMessage, false);
 
+
+function init(){
+
+    // See what has been supplied on the query string
+    const imageQs = /image=(.*)/g.exec(window.location.search);
+    const collQs = /collection=(.*)/g.exec(window.location.search);
+    const manifestQs = /manifest=(.*)/g.exec(window.location.search)
+
+    sourcesMap = {};
+
+    if(imageQs && imageQs[1])
+    {
+        // Load a IIIF Image Service directly, allow /info.json form or id
+        let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
+        fetch(imageServiceId + "/info.json").then(response => response.json().then(info => {
+            sourcesMap[imageServiceId] = info;
+            selectResource(imageServiceId);
+        }));
+    } 
+    else if(collQs && collQs[1]) 
+    {
+        // Load a IIIF Collection of Manifests
+        fetch(collQs[1]).then(response => response.json().then(sources => {
+            populateSourceList(sources);
+        }));
+    } 
+    else if(manifestQs && manifestQs[1]) 
+    {
+        // Load a single Manifest
+        fetch(manifestQs[1]).then(response => response.json().then(manifest => {
+            sourcesMap[manifest.id] = manifest;
+            selectResource(manifest.id);
+        }));    
+    } 
+    else 
+    {
+        document.querySelector("h1").innerText = "(no resource on query string)";
+    }
+}
+
+
+function populateSourceList(sources){
+    // A IIIF Collection was supplied, so populate the dropdown.
+    sourcesMap = {};
+    let sourceList = document.getElementById("sourceList");
+    sources.items.forEach(manifest => {
+        let opt = document.createElement("option");
+        opt.value = manifest.id;
+        opt.innerText = manifest.label["en"][0];
+        sourceList.appendChild(opt);
+        sourcesMap[manifest.id] = manifest;
+    });
+    sourceList.style.display = "block";    
+    sourceList.addEventListener("change", () => {
+        selectResource(sourceList.options[sourceList.selectedIndex].value);
+    });
+    let reloadButton = document.getElementById("reloadSource");
+    reloadButton.style.display = "block";    
+    reloadButton.addEventListener("click", () => {
+        selectResource(sourceList.options[sourceList.selectedIndex].value);
+    }); 
+}
+
+
+function selectResource(resourceId){
+
+    let resource = sourcesMap[resourceId];
+    document.querySelector("h1").innerText = resourceId;
+    let resourceAnchor = document.getElementById("resourceUrl");
+    resourceAnchor.innerText = resourceId;
+    resourceAnchor.href = resourceId;
+    if(resource.protocol == "http://iiif.io/api/image")
+    {
+        resourceAnchor.href += "/info.json";
+    }
+
+
+    // I'm here.
+    // Should we at this point go and find the actual content resource we are interested in
+    // within `resource` (it might be resource itself if it's an image service).
+    // yes. Then we run it through loadResource and getInfoResponse, but modified versions of what's below.
+    
+
+    loadResource(resourceId).then(infoResponse => {
+        if(infoResponse){
+            if(infoResponse.degraded || infoResponse.status === 401){
+                doAuthChain(infoResponse);
+            }
+        }
+    });
+}
+
 // resolve returns { infoJson, status }
 // reject returns an error message
 function getInfoResponse(resourceId, token){
@@ -123,142 +215,7 @@ function getInfoResponse(resourceId, token){
     });
 }
 
-function init(){
-    const imageQs = /image=(.*)/g.exec(window.location.search);
-    const sourceQs = /sources=(.*)/g.exec(window.location.search);
-    const p3ManifestQs = /manifest=(.*)/g.exec(window.location.search)
-    if(imageQs && imageQs[1]){
-        let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
-        sourcesMap[imageServiceId] = {
-            "type": IMAGE_SERVICE_TYPE,
-            "id": imageServiceId
-        }
-        selectResource(imageServiceId);
-    } else if(sourceQs && sourceQs[1]) {
-        loadSourceList(sourceQs[1]).then(sources => {
-            populateSourceList(sources);
-        });
-    } else if(p3ManifestQs && p3ManifestQs[1]) {
-        loadResourceFromManifest(p3ManifestQs[1]).then(resource => {
-            selectResource(resource);
-        });    
-    } else {
-        document.querySelector("h1").innerText = "(no image on query string)";
-    }
-}
 
-function selectResource(resourceOrResourceId){
-    let resource;
-    let resourceId;
-    if(resourceOrResourceId.hasOwnProperty("id")){
-        resourceId = resourceOrResourceId.id;
-        resource = resourceOrResourceId;
-    } else {
-        resourceId = resourceOrResourceId;
-        resource = sourcesMap[resourceId];
-    }
-    // This will either be in the sourcesMap, or will be fetched as an info.json
-    // either way, we'll end up with an object that carries the resource URL and the auth services.
-    document.querySelector("h1").innerText = resourceId;
-    let resourceAnchor = document.getElementById("infoJson");
-    let resourceUrl = resourceId + "/info.json";
-    if(resource && resource.type != IMAGE_SERVICE_TYPE){
-        // not an info.json; just display a link
-        resourceUrl = resource.id;
-    }    
-    resourceAnchor.href = resourceUrl;
-    resourceAnchor.innerText = resourceUrl;
-    loadResource(resourceId).then(infoResponse => {
-        if(infoResponse){
-            if(infoResponse.degraded || infoResponse.status === 401){
-                doAuthChain(infoResponse);
-            }
-        }
-    });
-}
-
-function populateSourceList(sources){
-    sourcesMap = {};
-    let sourceList = document.getElementById("sourceList");
-    sources.forEach(image => {
-        let opt = document.createElement("option");
-        opt.value = image.id;
-        opt.innerText = image.label;
-        sourceList.appendChild(opt);
-        sourcesMap[image.id] = image;
-    });
-    sourceList.style.display = "block";    
-    sourceList.addEventListener("change", () => {
-        selectResource(sourceList.options[sourceList.selectedIndex].value);
-    });
-    let reloadButton = document.getElementById("reloadSource");
-    reloadButton.style.display = "block";    
-    reloadButton.addEventListener("click", () => {
-        selectResource(sourceList.options[sourceList.selectedIndex].value);
-    }); 
-}
-
-function loadResourceFromManifest(manifestUrl){
-    // This auth demo is not a Presentation API client, it's only for
-    // resources. But service-less resources are going to be found in
-    // Presentation 3 manifests, so it needs to load them to test. This
-    // just gets the first resource it can find.
-    sourcesMap = {};
-    return new Promise((resolve, reject) => {
-        const request = new XMLHttpRequest();
-        request.open('GET', manifestUrl);
-        request.onload = function(){
-            try {
-                if(this.status === 200){
-                    manifest = JSON.parse(this.response);
-                    if(    manifest.items
-                        && manifest.items[0].items
-                        && manifest.items[0].items[0].items){
-                        // this is very fragile
-                        const resource = manifest.items[0].items[0].items[0].body;
-                        sourcesMap[resource.id] = resource;
-                        resource.partOf = manifestUrl;
-                        resolve(resource);
-                    } else {
-                        reject("Cannot find Presentation 3 resource in this manifest");
-                    }                    
-                } else {
-                    reject(this.status + " " + this.statusText);
-                } 
-            } catch(e) {
-                reject(e.message);
-            }
-        };
-        request.onerror = function() {
-            reject(this.status + " " + this.statusText);
-        };        
-        request.send();
-    });
-}
-
-
-// load a set of sample images from an instance of iiif-auth-server
-function loadSourceList(sourcesUrl){
-    return new Promise((resolve, reject) => {
-        const request = new XMLHttpRequest();
-        request.open('GET', sourcesUrl);
-        request.onload = function(){
-            try {
-                if(this.status === 200){
-                    resolve(JSON.parse(this.response));
-                } else {
-                    reject(this.status + " " + this.statusText);
-                } 
-            } catch(e) {
-                reject(e.message);
-            }
-        };
-        request.onerror = function() {
-            reject(this.status + " " + this.statusText);
-        };        
-        request.send();
-    });
-}
 
 async function loadResource(resourceId, token){
     let infoResponse;
