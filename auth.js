@@ -89,13 +89,18 @@ function selectResource(resourceId){
     if(resource.protocol == "http://iiif.io/api/image")
     {
         resourceAnchor.href += "/info.json";
+        if(resource["@id"]){
+            resource.type == IMAGE_SERVICE_TYPE;
+        }
     }
-
 
     // I'm here.
     // Should we at this point go and find the actual content resource we are interested in
     // within `resource` (it might be resource itself if it's an image service).
     // yes. Then we run it through loadResource and getInfoResponse, but modified versions of what's below.
+
+    // This demo is not a Presentation API client, really - it only shows one resource.
+    // But it needs to process a Manifest to get to a 
     
 
     loadResource(resourceId).then(infoResponse => {
@@ -105,6 +110,21 @@ function selectResource(resourceId){
             }
         }
     });
+}
+
+
+async function loadResource(resourceId, token){
+    let infoResponse;
+    try{
+        infoResponse = await getInfoResponse(resourceId, token);
+    } catch (e) {
+        log("Could not load " + resourceId);
+        log(e);
+    }
+    if(infoResponse && infoResponse.status === 200){
+        renderResource(infoResponse, resourceId);
+    }
+    return infoResponse;
 }
 
 // resolve returns { infoJson, status }
@@ -216,20 +236,6 @@ function getInfoResponse(resourceId, token){
 }
 
 
-
-async function loadResource(resourceId, token){
-    let infoResponse;
-    try{
-        infoResponse = await getInfoResponse(resourceId, token);
-    } catch (e) {
-        log("Could not load " + resourceId);
-        log(e);
-    }
-    if(infoResponse && infoResponse.status === 200){
-        renderResource(infoResponse, resourceId);
-    }
-    return infoResponse;
-}
 
 function renderResource(infoResponse, requestedResource){
     destroyViewer();
