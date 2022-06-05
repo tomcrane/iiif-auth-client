@@ -3,8 +3,7 @@ const ACCESS_TYPE = "AuthAccessService2";
 const PROBE_TYPE = "AuthProbeService2"; 
 const IMAGE_SERVICE_TYPE = 'ImageService3'; // for the purposes of this demo all image services will be given this type, even v2
 
-const PROFILE_LOGIN = 'http://iiif.io/api/auth/1/login';
-const PROFILE_CLICKTHROUGH = 'http://iiif.io/api/auth/1/clickthrough';
+const PROFILE_INTERACTIVE = 'http://iiif.io/api/auth/2/interactive';
 const PROFILE_KIOSK = 'http://iiif.io/api/auth/1/kiosk';
 const PROFILE_EXTERNAL = 'http://iiif.io/api/auth/1/external';
 const PROFILE_TOKEN = 'http://iiif.io/api/auth/1/token';
@@ -107,10 +106,10 @@ function selectResource(resourceId){
     authedResourceMap[authedResource.id] = authedResource;
 
     // here
-    loadResource(authedResource.id).then(authResponse => {
-        if(authResponse){
-            if(authResponse.location || authResponse.status === 401){
-                doAuthChain(authResponse);
+    loadResource(authedResource.id).then(probedResource => {
+        if(probedResource){
+            if(probedResource.location || probedResource.status === 401){
+                doAuthChain(probedResource);
             }
         }
     });
@@ -345,22 +344,16 @@ function first(objOrArray, predicate){
 }
 
 async function attemptResourceWithToken(authService, resourceId){
-    const authedResource = authedResourceMap[resourceId];
+    let authedResource = authedResourceMap[resourceId];
     log("attempting token interaction for " + authedResource.id);
-    // There could be a token service for each access service, but 
-
-
-    // HERE - token service belongs to ... what?
-
-
-    let tokenService = first(authedResource.accessServices[0], s => s.profile === PROFILE_TOKEN);
+    let tokenService = first(authService.service, s => s.profile === PROFILE_TOKEN);
     if(tokenService){
-        log("found token service: " + tokenService["@id"]);
+        log("found token service: " + tokenService.id);
         let tokenMessage = await openTokenService(tokenService); 
         if(tokenMessage && tokenMessage.accessToken){
-            let withTokenauthResponse = await loadResource(resourceId, tokenMessage.accessToken);
-            log("info request with token resulted in " + withTokenauthResponse.status);
-            if(withTokenauthResponse.status == 200){
+            authedResource = await loadResource(resourceId, tokenMessage.accessToken);
+            log("info request with token resulted in " + authedResource.status);
+            if(authedResource.status == 200){
                 renderResource(resourceId);
                 return true;
             }
@@ -370,71 +363,47 @@ async function attemptResourceWithToken(authService, resourceId){
     return false;
 }
 
-async function doAuthChain(authResponse){
+async function doAuthChain(authedResource){
     // This function enters the flowchart at the < External? > junction
     // http://iiif.io/api/auth/1.0/#workflow-from-the-browser-client-perspective
-    if(!authedResource.service){
+    if(!authedResource.accessServices){
         log("No services found")
         return;
     }
-    let services = asArray(authedResource.service);
     let lastAttempted = null;
-    let requestedId = authResponse.requestedId;
 
     // repetition of logic is left in these steps for clarity:
     
     log("Looking for external pattern");
-    let serviceToTry = first(services, s => s.profile === PROFILE_EXTERNAL);
+    let serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_EXTERNAL);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        let success = await attemptResourceWithToken(serviceToTry, requestedId);
+        let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
         if(success) return;
     }
 
     log("Looking for kiosk pattern");
-    serviceToTry = first(services, s => s.profile === PROFILE_KIOSK);
+    serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_KIOSK);
     if(serviceToTry){
         lastAttempted = serviceToTry;
         let kioskWindow = openContentProviderWindow(serviceToTry);
         if(kioskWindow){
             await userInteractionWithContentProvider(kioskWindow);
-            let success = await attemptResourceWithToken(serviceToTry, requestedId);
+            let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
             if(success) return;
         } else {
             log("Could not open kiosk window");
         }
     }
 
-    // The code for the next two patterns is identical (other than the profile name).
-    // The difference is in the expected behaviour of
-    //
-    //    await userInteractionWithContentProvider(contentProviderWindow);
-    // 
-    // For clickthrough the opened window should close immediately having established
-    // a session, whereas for login the user might spend some time entering credentials etc.
-
-    log("Looking for clickthrough pattern");
-    serviceToTry = first(services, s => s.profile === PROFILE_CLICKTHROUGH);
+    log("Looking for interactive pattern");
+    serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_INTERACTIVE);
     if(serviceToTry){
         lastAttempted = serviceToTry;
         let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
         if(contentProviderWindow){
-            // should close immediately
             await userInteractionWithContentProvider(contentProviderWindow);
-            let success = await attemptResourceWithToken(serviceToTry, requestedId);
-            if(success) return;
-        } 
-    }
-
-    log("Looking for login pattern");
-    serviceToTry = first(services, s => s.profile === PROFILE_LOGIN);
-    if(serviceToTry){
-        lastAttempted = serviceToTry;
-        let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
-        if(contentProviderWindow){
-            // we expect the user to spend some time interacting
-            await userInteractionWithContentProvider(contentProviderWindow);
-            let success = await attemptResourceWithToken(serviceToTry, requestedId);
+            let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
             if(success) return;
         } 
     }
@@ -465,14 +434,14 @@ function openTokenService(tokenService){
     // use a Promise across a postMessage call. Discuss...
     return new Promise((resolve, reject) => {
         // if necessary, the client can decide not to trust this origin
-        const serviceOrigin = getOrigin(tokenService["@id"]);
+        const serviceOrigin = getOrigin(tokenService.id);
         const messageId = messageIds.next().value;
         messages[messageId] = { 
             "resolve": resolve,
             "reject": reject,
             "serviceOrigin": serviceOrigin
         };
-        var tokenUrl = tokenService["@id"] + "?messageId=" + messageId + "&origin=" + getOrigin();
+        var tokenUrl = tokenService.id + "?messageId=" + messageId + "&origin=" + getOrigin();
         document.getElementById("commsFrame").src = tokenUrl;
 
         // reject any unhandled messages after a configurable timeout
@@ -514,7 +483,7 @@ function userInteractionWithContentProvider(contentProviderWindow){
         // It can but wait.
         var poll = window.setInterval(() => {
             if(contentProviderWindow.closed){
-                log("cookie service window is now closed")
+                log("interactive service window is now closed")
                 window.clearInterval(poll);
                 resolve();
             }
@@ -522,33 +491,33 @@ function userInteractionWithContentProvider(contentProviderWindow){
     });
 }
 
-function sanitise(s, allowHtml){
-    // Unimplemented
-    // Viewers should already have an HTML sanitiser library, for metadata etc
+function getDisplayText(langMap, allowHtml){
+    // This would extract the relevant language text from the language map, and sanitise HTML for output.
+    // Sanitisation unimplemented, viewers should already have an HTML sanitiser library, for metadata etc
     if(allowHtml){
         // sanitise but allow permitted tags
-        return s;
+        return Object.entries(langMap)[0][1];
     }
     // return text content only
-    return s;
+    return Object.entries(langMap)[0][1];
 }
 
 function openContentProviderWindow(service){
-    let cookieServiceUrl = service["@id"] + "?origin=" + getOrigin();
-    log("Opening content provider window: " + cookieServiceUrl);
-    return window.open(cookieServiceUrl);
+    let interactiveServiceUrl = service.id + "?origin=" + getOrigin();
+    log("Opening content provider window: " + interactiveServiceUrl);
+    return window.open(interactiveServiceUrl);
 }
 
 function getContentProviderWindowFromModal(service){
     return new Promise(resolve => {
         hideModals();
-        modal = document.getElementById("beforeOpenCookieServiceModal");
+        modal = document.getElementById("beforeOpenInteractiveServiceModal");
         modal.querySelector(".close").onclick = (ev => {
             hideModals();
             resolve(null);
         });
         modal.querySelector("#csConfirm").onclick = (ev => {
-            log("Interacting with cookie service in new tab - " + service["@id"]);
+            log("Interacting with service in new tab - " + service.id);
             let win = openContentProviderWindow(service);
             hideModals();
             resolve(win);
@@ -558,16 +527,16 @@ function getContentProviderWindowFromModal(service){
             resolve(null);
         });
         if(service.label){
-            modal.querySelector("#csLabel").innerText = sanitise(service.label);
+            modal.querySelector("#csLabel").innerText = getDisplayText(service.label);
         }
         if(service.header){
-            modal.querySelector("#csHeader").innerText = sanitise(service.header);
+            modal.querySelector("#csHeader").innerText = getDisplayText(service.header);
         }
         if(service.description){
-            modal.querySelector("#csDescription").innerText = sanitise(service.description, true);
+            modal.querySelector("#csDescription").innerText = getDisplayText(service.description, true);
         }
         if(service.confirmLabel){
-            modal.querySelector("#csConfirm").innerText = sanitise(service.confirmLabel);
+            modal.querySelector("#csConfirm").innerText = getDisplayText(service.confirmLabel);
         }
         modal.style.display = "block";
     });
@@ -579,10 +548,10 @@ function showOutOfOptionsMessages(service){
     modal.querySelector(".close").onclick = (ev => hideModals());
     modal.querySelector("#failureClose").onclick = (ev => hideModals());
     if(service.failureHeader){
-        modal.querySelector("#failureHeader").innerText = sanitise(service.failureHeader);
+        modal.querySelector("#failureHeader").innerText = getDisplayText(service.failureHeader);
     }
     if(service.failureDescription){
-        modal.querySelector("#failureDescription").innerText = sanitise(service.failureDescription, true);
+        modal.querySelector("#failureDescription").innerText = getDisplayText(service.failureDescription, true);
     }
     modal.style.display = "block";
 }
