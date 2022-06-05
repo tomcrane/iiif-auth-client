@@ -234,8 +234,10 @@ function getProbeResponse(authedResourceId, token){
         .then(response => {
             authedResource.status = response.status;
             if(authedResource.method == HTTP_METHOD_GET){
-                let probe = await response.json();
-                authedResource.location = probe.location;
+                response.json().then(probe => {
+                    authedResource.location = probe.location;
+                    resolve(authedResource);
+                });
             }
             resolve(authedResource);
         })                
