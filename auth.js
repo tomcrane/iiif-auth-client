@@ -1,14 +1,14 @@
 const AUTHED_RESOURCE_KEY = "authedResource_";
 const ACCESS_TYPE = "AuthAccessService2";
 const PROBE_TYPE = "AuthProbeService2"; 
-const IMAGE_SERVICE_TYPE = 'ImageService3'; // for the purposes of this demo all image services will be given this type, even v2
+const TOKEN_TYPE = "AuthTokenService2"; 
 
-const PROFILE_INTERACTIVE = 'http://iiif.io/api/auth/2/interactive';
-const PROFILE_KIOSK = 'http://iiif.io/api/auth/1/kiosk';
-const PROFILE_EXTERNAL = 'http://iiif.io/api/auth/1/external';
-const PROFILE_TOKEN = 'http://iiif.io/api/auth/1/token';
-const PROFILE_LOGOUT = 'http://iiif.io/api/auth/1/logout';
-const PROFILE_PROBE = 'http://iiif.io/api/auth/1/probe';
+const IMAGE_SERVICE_PROTOCOL = "http://iiif.io/api/image";
+const IMAGE_SERVICE_TYPE = 'ImageService2'; // for the purposes of this demo all image services will be given this type if they don't come with a type
+
+const PROFILE_INTERACTIVE = 'interactive';
+const PROFILE_KIOSK = 'kiosk';
+const PROFILE_EXTERNAL = 'external';
 const HTTP_METHOD_GET = 'GET';
 const HTTP_METHOD_HEAD = 'HEAD';
 
@@ -88,25 +88,76 @@ function populateSourceList(sources){
 
 function selectResource(resourceId){
 
-    let resource = sourcesMap[resourceId];
+    let sourceResource = sourcesMap[resourceId];
+    if(!sourceResource){
+        log("No resource in sources for resourceId: " + resourceId);
+        return;
+    }
+    if(sourceResource.type == "Manifest" && !sourceResource.hasOwnProperty("items")){
+        // This is still the reference to the Manifest from the original collection
+        fetch(sourceResource.id).then(response => response.json()).then(data => {
+            sourcesMap[resourceId] = data;
+            selectResource(resourceId);
+        });
+        return;
+    }
     document.querySelector("h1").innerText = resourceId;
     let resourceAnchor = document.getElementById("resourceUrl");
     resourceAnchor.innerText = resourceId;
     resourceAnchor.href = resourceId;
-    if(resource.protocol == "http://iiif.io/api/image")
+
+    // TODO inspect protocol and profile for "iiif.io/api/image"
+    if(isTypedImageService(sourceResource))
     {
         resourceAnchor.href += "/info.json";
-        if(resource["@id"]){
-            // Give the image service a type even if it's a v2, so we can identify it quickly
-            resource.type == IMAGE_SERVICE_TYPE;
-        }
     }
 
-    const authedResource = getAuthedResource(resource);
-    authedResourceMap[authedResource.id] = authedResource;
+    selectMediaResource(sourceResource);
+}
 
-    // here
-    loadResource(authedResource.id).then(probedResource => {
+
+
+function selectMediaResource(sourceResource){
+
+    let res;
+    if(sourceResource.type == "Manifest"){
+        // just take the first resource on the first canvas, but look for renderings too
+        // Only accept v3 Manifests
+        const canvas = sourceResource.items[0];
+        // we want to demo auth on PDFs, etc, so if this special behavior is present we'll
+        // assume the authed resource is a rendering, and not in the body of a painting anno.
+        // A real viewer should deal with auth on any resource, but our special viewer only
+        // deals with one authed resource per source.
+        if(canvas["behavior"] && canvas["behavior"].includes("placeholder")){
+            res = first(canvas["rendering"], r => r["behavior"] && r["behavior"].includes("original"));
+        } else {
+            res = canvas.items[0].items[0].body;
+        }
+        if(res["service"]){
+            // Pick either v2 or v3 image service from a v3 Manifest
+            const svc = first(res["service"], s => ((s["@type"] || s["type"]) || "").startsWith("ImageService"));
+            if(svc){
+                // load the full image service, so we can see its auth services
+                fetch(svc["@id"] || svc["id"])
+                    .then(resp => resp.json())
+                    .then(json => {
+                        if(isTypedImageService(json))
+                        {
+                            loadResource(json);
+                        }
+                    });
+                return;
+            }
+        }
+    }
+    loadResource(res);
+}
+
+
+function loadResource(sourceResource){
+    let authedResource = constructAuthedResourceInfo(sourceResource)
+    authedResourceMap[authedResource.id] = authedResource;
+    loadAuthedResource(authedResource.id).then(probedResource => {
         if(probedResource){
             if(probedResource.location || probedResource.status === 401){
                 doAuthChain(probedResource);
@@ -116,8 +167,7 @@ function selectResource(resourceId){
 }
 
 
-async function getAuthedResource(anyResource){
-
+function constructAuthedResourceInfo(actualResource){
     // returns one of these:
     // An object that represents a content resource or image service and its probe service.
     const authedResource = {
@@ -133,42 +183,16 @@ async function getAuthedResource(anyResource){
         imageService: null
     }
 
-    let res;
-    if(anyResource.type == "Manifest"){
-        // just take the first resource on the first canvas, but look for renderings too
-        // Only accept v3 Manifests
-        const canvas = anyResource.items[0];
-        // we want to demo auth on PDFs, etc, so if this special behavior is present we'll
-        // assume the authed resource is a rendering, and not in the body of a painting anno.
-        // A real viewer should deal with auth on any resource, but our special viewer only
-        // deals with one authed resource per source.
-        if(canvas["behavior"] && canvas["behavior"].includes("placeholder")){
-            res = first(canvas["rendering"], r => r["behavior"] && r["behavior"].includes("original"));
-        } else {
-            res = canvas.items[0].items[0].body;
-        }
-        if(res["service"]){
-            const svc = res["service"][0];
-            const svcType = svc["@type"] || svc["type"];
-            if(svcType && svcType.startsWith("ImageService")){
-                // This is inefficient, as we're going to _probe_ this again later
-                // It simplifies the demo as we have the full info right now.
-                fetch(svc["@id"] || svc["id"]).then(resp => resp.json()).then(json => res = json);
-            }
-        }
-    }
-
-    // We've now got the authed resource we want to render, rather than whatever was carrying it.
-    authedResource.id = res["@id"] || res["id"];
-    authedResource.type = res["type"] || res["@type"];
-    authedResource.format = res["format"]; // often null
+    authedResource.id = actualResource["@id"] || actualResource["id"];
+    authedResource.type = actualResource["type"] || actualResource["@type"];
+    authedResource.format = actualResource["format"]; // often null
     authedResource.probe = authedResource.id; // unless there's a probe service, below
     authedResource.method = HTTP_METHOD_GET;
     if(authedResource.type.startsWith("ImageService")){
         authedResource.probe = authedResource.id + "/info.json";
-        authedResource.imageService = res;
+        authedResource.imageService = actualResource;
     } else {
-        let explicitProbe = first(authedResource["service"], s => s["type"] == PROBE_TYPE);
+        let explicitProbe = first(actualResource["service"], s => s["type"] == PROBE_TYPE);
         if(explicitProbe){
             authedResource.probe = explicitProbe.id;
         } else {
@@ -176,13 +200,13 @@ async function getAuthedResource(anyResource){
             authedResource.method = HTTP_METHOD_HEAD;
         }
     }
-    authedResource.accessServices = asArray(res["service"]).filter(s => s["type"] == ACCESS_TYPE);
+    authedResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] == ACCESS_TYPE);
 
     return authedResource;
 }
 
 
-async function loadResource(authedResourceId, token){
+async function loadAuthedResource(authedResourceId, token){
     // token is optional - you might not have it yet!
     let probedAuthResource;
     try{
@@ -191,7 +215,8 @@ async function loadResource(authedResourceId, token){
         log("Could not load " + authedResourceId);
         log(e);
     }
-    if(probedAuthResource && probedAuthResource.status === 200){
+    if(probedAuthResource && (probedAuthResource.status === 200 || probedAuthResource.location)){
+        // we have something to show, even if there's more available after auth
         renderResource(authedResourceId);
     }
     return probedAuthResource;
@@ -199,7 +224,7 @@ async function loadResource(authedResourceId, token){
 
 // resolve returns { infoJson, status }
 // reject returns an error message
-function getProbeResponse(authedResourceId, token){
+async function getProbeResponse(authedResourceId, token){
     
     // updates the authedResource with information about the user's relationship with the resource,
     // by requesting the probe service (which may be the resource itself).
@@ -259,7 +284,11 @@ function renderResource(requestedResourceId){
     }
     if(authedResource.type == IMAGE_SERVICE_TYPE){
         log("This resource is an image service.");
-        renderImageService(authedResource);
+        if(authedResource.location){
+            fetch(location).then(resp => resp.json).then(json => loadResource(json));
+        } else {
+            renderImageService(authedResource);
+        }
     } else {
         log("The resource is of type " + authedResource.type);
         log("The resource is of format " + authedResource.format);
@@ -311,7 +340,7 @@ function renderImageService(authedResource){
         prefixUrl: "openseadragon/images/",
         tileSources: authedResource.imageService
     });
-    makeDownloadLink(authedResource.imageService);
+    makeDownloadLink(authedResource);
 }
 
 function makeDownloadLink(authedResource){
@@ -348,12 +377,12 @@ function first(objOrArray, predicate){
 async function attemptResourceWithToken(authService, resourceId){
     let authedResource = authedResourceMap[resourceId];
     log("attempting token interaction for " + authedResource.id);
-    let tokenService = first(authService.service, s => s.profile === PROFILE_TOKEN);
+    let tokenService = first(authService.service, s => s.type === TOKEN_TYPE);
     if(tokenService){
         log("found token service: " + tokenService.id);
         let tokenMessage = await openTokenService(tokenService); 
         if(tokenMessage && tokenMessage.accessToken){
-            authedResource = await loadResource(resourceId, tokenMessage.accessToken);
+            authedResource = await loadAuthedResource(resourceId, tokenMessage.accessToken);
             log("info request with token resulted in " + authedResource.status);
             if(authedResource.status == 200){
                 renderResource(resourceId);
@@ -566,6 +595,27 @@ function hideModals(){
             el.onclick = null;
         });
     });
+}
+
+// Rename this - it decorates the image service with .type in passing.
+function isTypedImageService(resource){
+    let type = resource["type"] || resource["@type"];
+    if(type && type.startsWith("ImageService")){
+        resource.type = type; // in case @type
+        return true;
+    }
+    if(resource.protocol && resource.protocol == IMAGE_SERVICE_PROTOCOL){
+        resource.type = IMAGE_SERVICE_TYPE;
+        return true;
+    }
+    if(resource.profile){
+        let profile = asArray(resource.profile);
+        if(profile[0] && profile[0].contains("iiif.io/api/image")){
+            resource.type = IMAGE_SERVICE_TYPE;
+            return true;
+        }
+    }
+    return false;
 }
 
 function log(text) {
