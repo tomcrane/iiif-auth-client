@@ -107,7 +107,7 @@ function selectResource(resourceId){
     resourceAnchor.href = resourceId;
 
     // TODO inspect protocol and profile for "iiif.io/api/image"
-    if(isTypedImageService(sourceResource))
+    if(ensureIsTypedImageService(sourceResource))
     {
         resourceAnchor.href += "/info.json";
     }
@@ -141,7 +141,7 @@ function selectMediaResource(sourceResource){
                 fetch(svc["@id"] || svc["id"])
                     .then(resp => resp.json())
                     .then(json => {
-                        if(isTypedImageService(json))
+                        if(ensureIsTypedImageService(json))
                         {
                             loadResource(json);
                         }
@@ -230,47 +230,44 @@ async function getProbeResponse(authedResourceId, token){
     // by requesting the probe service (which may be the resource itself).
     
     let authedResource = authedResourceMap[authedResourceId];
+    if (!authedResource.accessServices || !authedResource.accessServices.length) {
+        // no presence of, or possibility of auth; we don't know if the
+        // resource will respond to a HEAD and we don't want to send a token
+        // because that imposes CORS reqts on the server that they might 
+        // not support because their content is open.
+        authedResource.status = 200;
+        return authedResource;
+    }
+
     log("Probe will be requested with HTTP " + authedResource.method);
+
+    const settings = {
+        method: authedResource.method,
+        mode: "cors"
+    }
+    if(token){
+        settings.headers = {
+            "Authorization": "Bearer " + token    
+        }
+    }
+    const probeRequest = new Request(authedResource.probe, settings);
     
-    return new Promise((resolve, reject) => {
+    authedResource.status = 0;
+    authedResource.location = null;
 
-        
-        if (!authedResource.accessServices || !authedResource.accessServices.length) {
-            // no presence of, or possibility of auth; we don't know if the
-            // resource will respond to a HEAD and we don't want to send a token
-            // because that imposes CORS reqts on the server that they might 
-            // not support because their content is open.
-            authedResource.status = 200;
-            resolve(authedResource);
+    try
+    {
+        let response = await fetch(probeRequest);
+        authedResource.status = response.status;
+        if(authedResource.method == HTTP_METHOD_GET){
+            let probeBody = await response.json();
+            authedResource.location = probeBody.location;
         }
+    } catch (error){
+        authedResource.error = error;
+    }
 
-        const settings = {
-            method: authedResource.method,
-            mode: "cors"
-        }
-        if(token){
-            settings.headers = {
-                "Authorization": "Bearer " + token    
-            }
-        }
-        const probeRequest = new Request(authedResource.probe, settings);
-
-        fetch(probeRequest)
-        .then(response => {
-            authedResource.status = response.status;
-            if(authedResource.method == HTTP_METHOD_GET){
-                response.json().then(probe => {
-                    authedResource.location = probe.location;
-                    resolve(authedResource);
-                });
-            }
-            resolve(authedResource);
-        })                
-        .catch(error => {
-            authedResource.error = error;
-            reject(authedResource);
-        });
-    });
+    return authedResource; 
 }
 
 
@@ -285,7 +282,15 @@ function renderResource(requestedResourceId){
     if(authedResource.type == IMAGE_SERVICE_TYPE){
         log("This resource is an image service.");
         if(authedResource.location){
-            fetch(location).then(resp => resp.json).then(json => loadResource(json));
+            log("Fetch the info.json for the 'degraded' resource at " + authedResource.location);
+            fetch(authedResource.location)
+                .then(resp => resp.json())
+                .then(json => {
+                    if(ensureIsTypedImageService(json))
+                    {
+                        loadResource(json);
+                    }
+                });
         } else {
             renderImageService(authedResource);
         }
@@ -598,7 +603,7 @@ function hideModals(){
 }
 
 // Rename this - it decorates the image service with .type in passing.
-function isTypedImageService(resource){
+function ensureIsTypedImageService(resource){
     let type = resource["type"] || resource["@type"];
     if(type && type.startsWith("ImageService")){
         resource.type = type; // in case @type
