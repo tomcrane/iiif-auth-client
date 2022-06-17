@@ -1,7 +1,7 @@
-const AUTHED_RESOURCE_KEY = "authedResource_";
 const ACCESS_TYPE = "AuthAccessService2";
 const PROBE_TYPE = "AuthProbeService2"; 
-const TOKEN_TYPE = "AuthTokenService2"; 
+const TOKEN_TYPE = "AuthTokenService2";
+const MANIFEST_TYPE = "Manifest";
 
 const IMAGE_SERVICE_PROTOCOL = "http://iiif.io/api/image";
 const IMAGE_SERVICE_TYPE = 'ImageService2'; // for the purposes of this demo all image services will be given this type if they don't come with a type
@@ -93,7 +93,7 @@ function selectResource(resourceId){
         log("No resource in sources for resourceId: " + resourceId);
         return;
     }
-    if(sourceResource.type == "Manifest" && !sourceResource.hasOwnProperty("items")){
+    if(sourceResource.type === MANIFEST_TYPE && !sourceResource.hasOwnProperty("items")){
         // This is still the reference to the Manifest from the original collection
         fetch(sourceResource.id).then(response => response.json()).then(data => {
             sourcesMap[resourceId] = data;
@@ -120,11 +120,11 @@ function selectResource(resourceId){
 function selectMediaResource(sourceResource){
 
     let res;
-    if(sourceResource.type == "Manifest"){
+    if(sourceResource.type === MANIFEST_TYPE){
         // just take the first resource on the first canvas, but look for renderings too
         // Only accept v3 Manifests
         const canvas = sourceResource.items[0];
-        // we want to demo auth on PDFs, etc, so if this special behavior is present we'll
+        // we want to demo auth on PDFs, etc., so if this special behavior is present we'll
         // assume the authed resource is a rendering, and not in the body of a painting anno.
         // A real viewer should deal with auth on any resource, but our special viewer only
         // deals with one authed resource per source.
@@ -160,7 +160,7 @@ function loadResource(sourceResource){
     loadAuthedResource(authedResource.id).then(probedResource => {
         if(probedResource){
             if(probedResource.location || probedResource.status === 401){
-                doAuthChain(probedResource);
+                doAuthChain(probedResource).then(() => log("Auth Chain Completed"));
             }
         }
     });
@@ -192,7 +192,7 @@ function constructAuthedResourceInfo(actualResource){
         authedResource.probe = authedResource.id + "/info.json";
         authedResource.imageService = actualResource;
     } else {
-        let explicitProbe = first(actualResource["service"], s => s["type"] == PROBE_TYPE);
+        let explicitProbe = first(actualResource["service"], s => s["type"] === PROBE_TYPE);
         if(explicitProbe){
             authedResource.probe = explicitProbe.id;
         } else {
@@ -200,7 +200,7 @@ function constructAuthedResourceInfo(actualResource){
             authedResource.method = HTTP_METHOD_HEAD;
         }
     }
-    authedResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] == ACCESS_TYPE);
+    authedResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
 
     return authedResource;
 }
@@ -259,7 +259,7 @@ async function getProbeResponse(authedResourceId, token){
     {
         let response = await fetch(probeRequest);
         authedResource.status = response.status;
-        if(authedResource.method == HTTP_METHOD_GET){
+        if(authedResource.method === HTTP_METHOD_GET){
             let probeBody = await response.json();
             authedResource.location = probeBody.location;
         }
@@ -274,12 +274,12 @@ async function getProbeResponse(authedResourceId, token){
 function renderResource(requestedResourceId){
     destroyViewer();
     const authedResource = authedResourceMap[requestedResourceId];
-    if(authedResource.location && authedResource.location != requestedResourceId){
+    if(authedResource.location && authedResource.location !== requestedResourceId){
         log("The requested resource ID is " + requestedResourceId);
         log("The probe offered a location of " + authedResource.location);
         log("This resource is most likely the degraded version of the one you asked for");
     }
-    if(authedResource.type == IMAGE_SERVICE_TYPE){
+    if(authedResource.type === IMAGE_SERVICE_TYPE){
         log("This resource is an image service.");
         if(authedResource.location){
             log("Fetch the info.json for the 'degraded' resource at " + authedResource.location);
@@ -298,14 +298,14 @@ function renderResource(requestedResourceId){
         log("The resource is of type " + authedResource.type);
         log("The resource is of format " + authedResource.format);
         let viewerHTML;
-        let isDash = (authedResource.format == "application/dash+xml");
+        let isDash = (authedResource.format === "application/dash+xml");
         let resourceUrl = authedResource.location || authedResource.id;
-        if(authedResource.type == "Video"){
-            viewerHTML = "<video id='html5AV' src='" + resourceUrl + "' autoplay>Video here</video>";            
-        } else if(authedResource.type == "Audio"){
-            viewerHTML = "<audio id='html5AV' src='" + resourceUrl + "' autoplay>audio here</audio>";
-        } else if(authedResource.type == "Text" || authedResource.type == "PhysicalObject"){
-            viewerHTML = "<a href='" + authedResource.id + "' target='_blank'>Open document - " + authedResource.label + "</a>";
+        if(authedResource.type === "Video"){
+            viewerHTML = `<video id='html5AV' src='${resourceUrl}' autoplay>Video here</video>`;
+        } else if(authedResource.type === "Audio"){
+            viewerHTML = `<audio id='html5AV' src='${resourceUrl}' autoplay>audio here</audio>`;
+        } else if(authedResource.type === "Text" || authedResource.type === "PhysicalObject"){
+            viewerHTML = `<a href='${authedResource.id}' target='_blank'>Open document - ${authedResource.label}</a>`;
         } else {
             viewerHTML = "<p>Not a known type</p>";
         }
@@ -353,7 +353,7 @@ function makeDownloadLink(authedResource){
     let w = authedResource.imageService["width"];
     let h = authedResource.imageService["height"]
     let dims = "(" + w + " x " + h + ")";
-    maxWAssertion = first(authedResource.imageService["profile"], pf => pf["maxWidth"]);
+    let maxWAssertion = first(authedResource.imageService["profile"], pf => pf["maxWidth"]);
     if(maxWAssertion){
         dims += " (max width is " + maxWAssertion["maxWidth"] + ")";
     }
@@ -389,7 +389,7 @@ async function attemptResourceWithToken(authService, resourceId){
         if(tokenMessage && tokenMessage.accessToken){
             authedResource = await loadAuthedResource(resourceId, tokenMessage.accessToken);
             log("info request with token resulted in " + authedResource.status);
-            if(authedResource.status == 200){
+            if(authedResource.status === 200){
                 renderResource(resourceId);
                 return true;
             }
@@ -460,11 +460,11 @@ function getOrigin(url) {
 }
 
 function* MessageIdGenerator(){
-    var messageId = 1; // don't start at 0, it's falsey
+    let messageId = 1; // don't start at 0, it's false-y
     while(true) yield messageId++;
 }
 
-var messageIds = MessageIdGenerator();
+const messageIds = MessageIdGenerator();
 
 function openTokenService(tokenService){
     // use a Promise across a postMessage call. Discuss...
@@ -477,7 +477,7 @@ function openTokenService(tokenService){
             "reject": reject,
             "serviceOrigin": serviceOrigin
         };
-        var tokenUrl = tokenService.id + "?messageId=" + messageId + "&origin=" + getOrigin();
+        const tokenUrl = tokenService.id + "?messageId=" + messageId + "&origin=" + getOrigin();
         document.getElementById("commsFrame").src = tokenUrl;
 
         // reject any unhandled messages after a configurable timeout
@@ -500,15 +500,14 @@ function receiveMessage(event) {
     log(JSON.stringify(event.data));
     let rejectValue = "postMessage event received but rejected.";
     if(event.data.hasOwnProperty("messageId")){
-        log("recieved message with id " + event.data.messageId);
-        var message = messages[event.data.messageId];
-        if(message && event.origin == message.serviceOrigin)
+        log("received message with id " + event.data.messageId);
+        const message = messages[event.data.messageId];
+        if(message && event.origin === message.serviceOrigin)
         {
             // Any message with a messageId is a success
             log("We trust that we triggered this message, so resolve")
             message.resolve(event.data);
             delete messages[event.data.messageId];
-            return;
         }    
     }
 }
@@ -517,9 +516,9 @@ function userInteractionWithContentProvider(contentProviderWindow){
     return new Promise((resolve) => {
         // What happens here is forever a mystery to a client application.
         // It can but wait.
-        var poll = window.setInterval(() => {
-            if(contentProviderWindow.closed){
-                log("interactive service window is now closed")
+        const poll = window.setInterval(() => {
+            if (contentProviderWindow.closed) {
+                log("interactive service window is now closed");
                 window.clearInterval(poll);
                 resolve();
             }
@@ -547,7 +546,7 @@ function openContentProviderWindow(service){
 function getContentProviderWindowFromModal(service){
     return new Promise(resolve => {
         hideModals();
-        modal = document.getElementById("beforeOpenInteractiveServiceModal");
+        let modal = document.getElementById("beforeOpenInteractiveServiceModal");
         modal.querySelector(".close").onclick = (ev => {
             hideModals();
             resolve(null);
@@ -580,7 +579,7 @@ function getContentProviderWindowFromModal(service){
 
 function showOutOfOptionsMessages(service){
     hideModals();
-    modal = document.getElementById("failureModal");
+    let modal = document.getElementById("failureModal");
     modal.querySelector(".close").onclick = (ev => hideModals());
     modal.querySelector("#failureClose").onclick = (ev => hideModals());
     if(service.failureHeader){
@@ -602,14 +601,15 @@ function hideModals(){
     });
 }
 
-// Rename this - it decorates the image service with .type in passing.
 function ensureIsTypedImageService(resource){
+    // Determines whether a resource is an image service, and if so, assigns it a type
+    // if it doesn't have one. This makes latertype checking simpler.
     let type = resource["type"] || resource["@type"];
     if(type && type.startsWith("ImageService")){
         resource.type = type; // in case @type
         return true;
     }
-    if(resource.protocol && resource.protocol == IMAGE_SERVICE_PROTOCOL){
+    if(resource.protocol && resource.protocol === IMAGE_SERVICE_PROTOCOL){
         resource.type = IMAGE_SERVICE_TYPE;
         return true;
     }
@@ -624,8 +624,8 @@ function ensureIsTypedImageService(resource){
 }
 
 function log(text) {
-    var logDiv = document.querySelector("#usermessages");
-    var p = document.createElement("p");
+    const logDiv = document.querySelector("#usermessages");
+    const p = document.createElement("p");
     p.innerText = text;
     logDiv.appendChild(p);
     logDiv.scrollTop = logDiv.scrollHeight;
