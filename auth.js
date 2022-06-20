@@ -305,7 +305,7 @@ function renderResource(requestedResourceId){
         } else if(authedResource.type === "Audio"){
             viewerHTML = `<audio id='html5AV' src='${resourceUrl}' autoplay>audio here</audio>`;
         } else if(authedResource.type === "Text" || authedResource.type === "PhysicalObject"){
-            viewerHTML = `<a href='${authedResource.id}' target='_blank'>Open document - ${authedResource.label}</a>`;
+            viewerHTML = `<a href='${authedResource.id}' target='_blank'>Open document in new window</a>`;
         } else {
             viewerHTML = "<p>Not a known type</p>";
         }
