@@ -150,7 +150,7 @@ function selectMediaResource(sourceResource){
             }
         }
     }
-    loadResource(res);
+    loadResource(res || sourceResource);
 }
 
 
