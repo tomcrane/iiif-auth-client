@@ -6,13 +6,23 @@ This flow is based on the existing IIIF Auth Spec, [version 1](https://iiif.io/a
 
 This [Slide Deck from 2020](https://docs.google.com/presentation/d/1KBFYK0pz-NPqY5BTeP97XHUrMKYEeg53S1_9Uq9Ylxc/edit) gives an introduction to IIIF Auth.
 
-**The Probe Service is still exactly the same flow as regular auth for images, that clients like the UV have supported for years - there's a login service, and a token service that opens in an iframe. The only difference is that for image services, the info.json _is_ the probe service, but for AV resources (or any other resources) we have to supply a spearate endpoint to act as the probe. EVERY OTHER PART OF THE FLOW IS THE SAME.** (See Note 1)
+**The Probe Service is still exactly the same flow as existing [IIIF Auth](https://iiif.io/api/auth/1.0/) for images, that clients like the UV have supported for years - there's a login service, and a token service that opens in an iframe, and a postMessage call from the iframe to the client. The only difference is that for image services, the info.json _is_ the probe service, but for AV resources (or any other resources) we have to supply a separate endpoint to act as the probe.** 
 
-> The most important thing to remember is that the IIIF Auth Specification is not itself an auth protocol like OAuth. Its purpose is to provide an interchange of information so that an untrusted client (like the UV) can learn whether the user has permission to see (or hear) a resource, before attempting to present the resource to the user. In other words, to avoid a poor user experience when the user experience is out of the hands of the content publisher. And then, if the client learns that the user can't see the resource, the spec provides the client with a link (typically a login page) where the user might acquire that permission (typically a cookie). The client can allow the user to click on the link, wait for the user to return from that login page, then try the auth flow again.
+**EVERY OTHER PART OF THE FLOW IS THE SAME, and can use the same code.** (See Note 1)
 
-## 1. Client sees Content Resource
+## Key Points
 
-Usually, when the client comes across a resource to play, it just plays it. A IIIF Manifest from the **Server** might include this MP3:
+- The IIIF Auth Specification is not itself an auth protocol like OAuth. 
+- Its purpose is to provide an interchange of information so that an untrusted client (like the UV) can learn whether the user has permission to see (or hear) a resource, before attempting to present the resource to the user.
+- It exists to enable a **good user experience** in standalone clients, NOT to provide access control.
+- Access control is up to you.
+- You might not need IIIF Auth in a controlled web environment where you know what a user can see before you present them with a viewer.
+
+_On with the flow..._
+
+## 1. Client wants to show Content Resource
+
+Usually, when the client comes across a resource to show or play, it just does it. A IIIF Manifest from the **Server** might include this MP3:
 
 ```json
 {
@@ -23,9 +33,11 @@ Usually, when the client comes across a resource to play, it just plays it. A II
 }
 ```
 
-This scenario doesn't interest us!
+This scenario doesn't interest us! The client should just play this MP3.
 
-However, when the client sees a resource **with Auth services**, it knows it needs to do more work. The **Server** added some extra info:
+> Note that the URL patterns seen in this demo don't mean anything, they are just implementation details of the demo. You can structure your URLs however you like. A client shouldn't infer anything from URL patterns.
+
+When the client sees a resource **with IIIF Auth services**, it knows it needs to do more work. The **Server** added some extra info into the published Manifest:
 
 ```json
 {
