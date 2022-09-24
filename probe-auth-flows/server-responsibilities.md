@@ -1,0 +1,3 @@
+# Server Responsibilities
+
+Before implementing IIIF Auth it's worth considering whether you need it. IIIF Auth is specifically for interoperability. If you only intend your IIIF resources to be used in your own web application environment - that is, presented in web applications and/or viewers that you are in control of, then you don't need the complexity of IIIF. Your web application knows whether a 
