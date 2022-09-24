@@ -1,0 +1,35 @@
+{
+    "id": "https://iiif-auth1.herokuapp.com/resources/23_32vs192kbps.mp3",
+    "type": "Audio",
+    "format": "audio/mp3",
+    "duration": 36.0,
+    "service": [{
+            "@id": "https://iiif-auth1.herokuapp.com/auth/cookie/login/23_32vs192kbps.mp3",
+            "@type": "AuthCookieService1",
+            "confirmLabel": "Login",
+            "description": "Example Institution requires that you log in with your example account to view this content.",
+            "failureDescription": "<a href=\"http://example.org/policy\">Access Policy</a>",
+            "failureHeader": "Authentication Failed",
+            "header": "Please Log In",
+            "label": "Login to Example Institution",
+            "profile": "http://iiif.io/api/auth/1/login",
+            "service": [{
+                    "@id": "https://iiif-auth1.herokuapp.com/auth/token/login/23_32vs192kbps.mp3",
+                    "@type": "AuthTokenService1",
+                    "profile": "http://iiif.io/api/auth/1/token"
+                },
+                {
+                    "@id": "https://iiif-auth1.herokuapp.com/auth/logout/login/23_32vs192kbps.mp3",
+                    "@type": "AuthLogoutService1",
+                    "label": "log out",
+                    "profile": "http://iiif.io/api/auth/1/logout"
+                }
+            ]
+        },
+        {
+            "@id": "https://iiif-auth1.herokuapp.com/probe/23_32vs192kbps.mp3",
+            "@type": "AuthProbeService1",
+            "profile": "http://iiif.io/api/auth/1/probe"
+        }
+    ]
+}
