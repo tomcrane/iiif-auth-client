@@ -66,7 +66,7 @@ Access-Control-Allow-Origin: *
 Access-Control-Allow-Credentials: true
 
 {
-    "contentLocation": "ttps://iiif-auth1.herokuapp.com/resources/23_32vs192kbps_degraded.mp3",
+    "contentLocation": "https://iiif-auth1.herokuapp.com/resources/23_32vs192kbps_degraded.mp3",
     "label": "Probe service for 23_32vs192kbps.mp3"
 }
 ```
