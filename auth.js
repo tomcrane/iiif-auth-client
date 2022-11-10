@@ -9,14 +9,14 @@ const IMAGE_SERVICE_TYPE = 'ImageService2'; // for the purposes of this demo all
 const PROFILE_INTERACTIVE = 'interactive';
 const PROFILE_KIOSK = 'kiosk';
 const PROFILE_EXTERNAL = 'external';
-const HTTP_METHOD_GET = 'GET';
-const HTTP_METHOD_HEAD = 'HEAD';
 
 let viewer = null;   
 let dashPlayer = null;   
 let messages = {};
 let sourcesMap = {}; // The loaded carrier of the authed resource
 let authedResourceMap = {}; // the actual resource - might be an image service, might be a video or a pdf.
+
+// Listen for IIIF Auth PostMessage calls from the token service
 window.addEventListener("message", receiveMessage, false);
 
 
@@ -38,7 +38,7 @@ function init(){
         let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
         fetch(imageServiceId + "/info.json").then(response => response.json().then(info => {
             sourcesMap[imageServiceId] = info;
-            selectResource(imageServiceId); // we can select it immediately
+            selectResource(imageServiceId); // we can select it immediately, there's only one
         }));
     } 
     else if(collQs && collQs[1]) 
@@ -154,8 +154,16 @@ function selectMediaResource(sourceResource){
 }
 
 
+
+/*
+    ====================================================================================================================
+    Up to this point we have just been setting up our test application, handling the loading of different test fixtures.
+    We now have a JSON description of a potentially access-controlled resource.
+    ====================================================================================================================
+ */
+
 function loadResource(sourceResource){
-    let authedResource = constructAuthedResourceInfo(sourceResource)
+    let authedResource = getResourceWithAuthInfo(sourceResource)
     authedResourceMap[authedResource.id] = authedResource;
     loadAuthedResource(authedResource.id).then(probedResource => {
         if(probedResource){
@@ -167,42 +175,29 @@ function loadResource(sourceResource){
 }
 
 
-function constructAuthedResourceInfo(actualResource){
-    // returns one of these:
-    // An object that represents a content resource or image service and its probe service.
-    const authedResource = {
+function getResourceWithAuthInfo(actualResource){
+    // returns an object that represents a content resource or image service and its probe service.
+    // You don't have to do it like this
+    const authResource = {
+        // tidied up properties of the resource itself
         id: null,
-        probe: null,
-        method: null,
-        accessServices: [],
         type: null,
         format: null,
-        status: 0,        // These last props will change as the
-        location: null,   // user goes through the auth flow.
-        error: null,
-        imageService: null
+        probe: null,
+        accessServices: [],
+        // These last props will change as the user goes through the auth flow.
+        status: 0,
+        location: null,
+        error: null
     }
 
-    authedResource.id = actualResource["@id"] || actualResource["id"];
-    authedResource.type = actualResource["type"] || actualResource["@type"];
-    authedResource.format = actualResource["format"]; // often null
-    authedResource.probe = authedResource.id; // unless there's a probe service, below
-    authedResource.method = HTTP_METHOD_GET;
-    if(authedResource.type.startsWith("ImageService")){
-        authedResource.probe = authedResource.id + "/info.json";
-        authedResource.imageService = actualResource;
-    } else {
-        let explicitProbe = first(actualResource["service"], s => s["type"] === PROBE_TYPE);
-        if(explicitProbe){
-            authedResource.probe = explicitProbe.id;
-        } else {
-            // The resource is its own probe, but we won't use GET (it might be huge!)
-            authedResource.method = HTTP_METHOD_HEAD;
-        }
-    }
-    authedResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
+    authResource.id = actualResource["@id"] || actualResource["id"];
+    authResource.type = actualResource["type"] || actualResource["@type"];
+    authResource.format = actualResource["format"]; // often null
+    authResource.probe = first(actualResource["service"], s => s["type"] === PROBE_TYPE)?.id;
+    authResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
 
-    return authedResource;
+    return authResource;
 }
 
 
@@ -231,20 +226,17 @@ async function getProbeResponse(authedResourceId, token){
     
     let authedResource = authedResourceMap[authedResourceId];
     if (!authedResource.accessServices || !authedResource.accessServices.length) {
-        // no presence of, or possibility of auth; we don't know if the
-        // resource will respond to a HEAD and we don't want to send a token
+        // no presence of, or possibility of auth; we don't want to send a token
         // because that imposes CORS reqts on the server that they might 
         // not support because their content is open.
         authedResource.status = 200;
         return authedResource;
     }
 
-    log("Probe will be requested with HTTP " + authedResource.method);
+    log("Probe will be requested with HTTP GET");
 
-    const settings = {
-        method: authedResource.method,
-        mode: "cors"
-    }
+    const settings = { method: "GET", mode: "cors" };
+
     if(token){
         settings.headers = {
             "Authorization": "Bearer " + token    
@@ -259,11 +251,10 @@ async function getProbeResponse(authedResourceId, token){
     {
         let response = await fetch(probeRequest);
         authedResource.status = response.status;
-        if(authedResource.method === HTTP_METHOD_GET){
-            let probeBody = await response.json();
-            authedResource.location = probeBody.location;
-        }
-    } catch (error){
+        let probeBody = await response.json();
+        authedResource.location = probeBody.location;
+    }
+    catch (error){
         authedResource.error = error;
     }
 
@@ -274,12 +265,13 @@ async function getProbeResponse(authedResourceId, token){
 function renderResource(requestedResourceId){
     destroyViewer();
     const authedResource = authedResourceMap[requestedResourceId];
-    if(authedResource.location && authedResource.location !== requestedResourceId){
-        log("The requested resource ID is " + requestedResourceId);
+    if(authedResource.location){
+        // For now, we will not handle the possibility of the location having further auth services
         log("The probe offered a location of " + authedResource.location);
         log("This resource is most likely the degraded version of the one you asked for");
     }
-    if(authedResource.type === IMAGE_SERVICE_TYPE){
+    // if(authedResource.type === IMAGE_SERVICE_TYPE){
+    if(ensureIsTypedImageService(authedResource)){
         log("This resource is an image service.");
         if(authedResource.location){
             log("Fetch the info.json for the 'degraded' resource at " + authedResource.location);
@@ -492,9 +484,11 @@ function openTokenService(tokenService){
     });
 }
 
-// The event listener for postMessage. Needs to take care it only
-// responds to messages initiated by openTokenService(..)
-// Completes promises made in openTokenService(..)
+/*
+ The event listener for postMessage. Needs to take care it only
+ responds to messages initiated by openTokenService(..)
+ Completes promises made in openTokenService(..)
+ */
 function receiveMessage(event) {    
     log("event received, origin=" + event.origin);
     log(JSON.stringify(event.data));
@@ -512,6 +506,9 @@ function receiveMessage(event) {
     }
 }
 
+/*
+    Await the closing of the opened access service window
+ */
 function userInteractionWithContentProvider(contentProviderWindow){
     return new Promise((resolve) => {
         // What happens here is forever a mystery to a client application.
@@ -537,12 +534,23 @@ function getDisplayText(langMap, allowHtml){
     return Object.entries(langMap)[0][1];
 }
 
+/*
+ Open a new tab/window on the content provider's access service
+ */
 function openContentProviderWindow(service){
     let interactiveServiceUrl = service.id + "?origin=" + getOrigin();
     log("Opening content provider window: " + interactiveServiceUrl);
     return window.open(interactiveServiceUrl);
 }
 
+/*
+    Present a user interface from the strings included in the IIIF Auth Services.
+    The aim of the modal dialog is to get the user to click on something that opens a new tab
+    for the content provider's access service.
+
+    The implementation doesn't have to be modal - it could be "to the side" of the viewer, or
+    anywhere else.
+ */
 function getContentProviderWindowFromModal(service){
     return new Promise(resolve => {
         hideModals();
