@@ -156,29 +156,38 @@ function selectMediaResource(sourceResource){
 
 
 /*
-    ====================================================================================================================
-    Up to this point we have just been setting up our test application, handling the loading of different test fixtures.
-    We now have a JSON description of a potentially access-controlled resource.
-    ====================================================================================================================
+    ======================================================================================================
+    Up to this point we have just been setting up our test application, handling the loading of different
+    test fixtures. We now have a IIIF Resource API (JSON-LD from a Manifest, info.json etc) description of
+    a potentially access-controlled resource.
+    ======================================================================================================
  */
 
 function loadResource(sourceResource){
-    let authedResource = getResourceWithAuthInfo(sourceResource)
-    authedResourceMap[authedResource.id] = authedResource;
-    loadAuthedResource(authedResource.id).then(probedResource => {
-        if(probedResource){
-            if(probedResource.location || probedResource.status === 401){
-                doAuthChain(probedResource).then(() => log("Auth Chain Completed"));
-            }
+    let authedResourceInfo = getAuthedResourceInfo(sourceResource)
+    authedResourceMap[authedResourceInfo.id] = authedResourceInfo;
+
+    getProbeResponse(authedResourceInfo.id, null).then(probedResource => {
+        if(probedResource.status === 200 || probedResource.location){
+            // we have something to show, even if there's more available after auth
+            renderResource(authedResourceInfo.id);
         }
+        if(probedResource.status === 401 || probedResource.location){
+            doAuthChain(probedResource).then(() => log("Auth Chain Completed"));
+        }
+    }).catch(e => {
+        log("Could not load " + authedResourceInfo.id);
+        log(e);
     });
 }
 
 
-function getResourceWithAuthInfo(actualResource){
-    // returns an object that represents a content resource or image service and its probe service.
-    // You don't have to do it like this
+function getAuthedResourceInfo(actualResource){
+    // returns an object that represents a content resource or image service and its probe service,
+    // and info about the user's relationship with the resource.
+    // You don't have to do it like this - this is an implementation detail.
     const authResource = {
+        originalResource: actualResource,
         // tidied up properties of the resource itself
         id: null,
         type: null,
@@ -198,23 +207,6 @@ function getResourceWithAuthInfo(actualResource){
     authResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
 
     return authResource;
-}
-
-
-async function loadAuthedResource(authedResourceId, token){
-    // token is optional - you might not have it yet!
-    let probedAuthResource;
-    try{
-        probedAuthResource = await getProbeResponse(authedResourceId, token);
-    } catch (e) {
-        log("Could not load " + authedResourceId);
-        log(e);
-    }
-    if(probedAuthResource && (probedAuthResource.status === 200 || probedAuthResource.location)){
-        // we have something to show, even if there's more available after auth
-        renderResource(authedResourceId);
-    }
-    return probedAuthResource;
 }
 
 // resolve returns { infoJson, status }
@@ -267,15 +259,15 @@ function renderResource(requestedResourceId){
     const authedResource = authedResourceMap[requestedResourceId];
     if(authedResource.location){
         // For now, we will not handle the possibility of the location having further auth services
-        log("The probe offered a location of " + authedResource.location);
+        log("The probe offered a location of " + authedResource.location.id);
         log("This resource is most likely the degraded version of the one you asked for");
     }
     // if(authedResource.type === IMAGE_SERVICE_TYPE){
     if(ensureIsTypedImageService(authedResource)){
         log("This resource is an image service.");
         if(authedResource.location){
-            log("Fetch the info.json for the 'degraded' resource at " + authedResource.location);
-            fetch(authedResource.location)
+            log("Fetch the info.json for the 'degraded' resource at " + authedResource.location.id);
+            fetch(authedResource.location.id)
                 .then(resp => resp.json())
                 .then(json => {
                     if(ensureIsTypedImageService(json))
@@ -284,14 +276,14 @@ function renderResource(requestedResourceId){
                     }
                 });
         } else {
-            renderImageService(authedResource);
+            renderImageService(authedResource.originalResource);
         }
     } else {
         log("The resource is of type " + authedResource.type);
         log("The resource is of format " + authedResource.format);
         let viewerHTML;
         let isDash = (authedResource.format === "application/dash+xml");
-        let resourceUrl = authedResource.location || authedResource.id;
+        let resourceUrl = authedResource.location?.id || authedResource.id;
         if(authedResource.type === "Video"){
             viewerHTML = `<video id='html5AV' src='${resourceUrl}' autoplay>Video here</video>`;
         } else if(authedResource.type === "Audio"){
@@ -305,7 +297,7 @@ function renderResource(requestedResourceId){
         if(isDash){
             dashPlayer = dashjs.MediaPlayer().create();
             // Only send credentials for a DASH request if an auth service was present on the resource.
-            let withCredentials = authResponse.cookieService != null;
+            let withCredentials = authedResource.accessServices?.length ? true : false;
             dashPlayer.setXHRWithCredentialsForType("MPD", withCredentials);
             // There's also
             // dashPlayer.setXHRWithCredentialsForType("MediaSegment", true);
@@ -328,48 +320,41 @@ function destroyViewer(){
     dashPlayer = null;
     document.getElementById("viewer").innerHTML = "";
     document.getElementById("largeDownload").innerHTML = "";
+    document.getElementById("contentResourceLink").innerHTML = "";
 }
 
-function renderImageService(authedResource){
-    log("OSD will load " + authedResource.id);
+function renderImageService(imageService){
+    const id = (imageService.id || imageService["@id"]);
+    log("OSD will load " + id);
     viewer = OpenSeadragon({
         id: "viewer",
         prefixUrl: "openseadragon/images/",
-        tileSources: authedResource.imageService
+        tileSources: imageService
     });
-    makeDownloadLink(authedResource);
+    makeDownloadLink(imageService);
+    makeContentResourceLink(id, "Link to IIIF Image Service");
 }
 
-function makeDownloadLink(authedResource){
+function makeDownloadLink(imageService){
     let largeDownload = document.getElementById("largeDownload");
-    let w = authedResource.imageService["width"];
-    let h = authedResource.imageService["height"]
+    let w = imageService["width"];
+    let h = imageService["height"]
     let dims = "(" + w + " x " + h + ")";
-    let maxWAssertion = first(authedResource.imageService["profile"], pf => pf["maxWidth"]);
+    let maxWAssertion = first(imageService["profile"], pf => pf["maxWidth"]);
     if(maxWAssertion){
         dims += " (max width is " + maxWAssertion["maxWidth"] + ")";
     }
     largeDownload.innerText = "Download large image: " + dims;
-    largeDownload.setAttribute("href", authedResource.id + "/full/full/0/default.jpg")
+    const id = (imageService.id || imageService["@id"]);
+    largeDownload.setAttribute("href", id + "/full/full/0/default.jpg")
 }
 
-function asArray(obj){
-    // wrap in array if singleton
-    if(obj){
-        return (obj.constructor === Array ? obj : [obj]);
-    }
-    return [];
+function makeContentResourceLink(href, text){
+    let contentResourceLink = document.getElementById("contentResourceLink");
+    contentResourceLink.innerText = text;
+    contentResourceLink.setAttribute("href", href);
 }
 
-function first(objOrArray, predicate){
-    if(!objOrArray) return null;
-    let arr = asArray(objOrArray);
-    let filtered = arr.filter(predicate);
-    if(filtered.length > 0){
-        return filtered[0];
-    }
-    return null;
-}
 
 async function attemptResourceWithToken(authService, resourceId){
     let authedResource = authedResourceMap[resourceId];
@@ -379,11 +364,19 @@ async function attemptResourceWithToken(authService, resourceId){
         log("found token service: " + tokenService.id);
         let tokenMessage = await openTokenService(tokenService);
         if(tokenMessage && tokenMessage.accessToken){
-            authedResource = await loadAuthedResource(resourceId, tokenMessage.accessToken);
+            try{
+                authedResource = await getProbeResponse(resourceId, tokenMessage.accessToken);
+            } catch (e) {
+                log("attemptResourceWithToken - could not load " + resourceId);
+                log(e);
+                return false;
+            }
             log("info request with token resulted in " + authedResource.status);
-            if(authedResource.status === 200){
+            if(authedResource.status === 200 || authedResource.location){
                 renderResource(resourceId);
-                return true;
+                if(authedResource.status === 200){
+                    return true;
+                }
             }
         }
     }
@@ -439,16 +432,6 @@ async function doAuthChain(authedResource){
     // nothing worked! Use the most recently tried service as the source of
     // messages to show to the user.
     showOutOfOptionsMessages(lastAttempted);
-}
-
-// determine the postMessage-style origin for a URL
-function getOrigin(url) {
-    let urlHolder = window.location;
-    if(url){
-        urlHolder = document.createElement('a');
-        urlHolder.href = url;
-    }
-    return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port: '');
 }
 
 function* MessageIdGenerator(){
@@ -631,6 +614,30 @@ function ensureIsTypedImageService(resource){
     return false;
 }
 
+init();
+
+
+
+/*********************************** Utils ***********************************/
+
+function asArray(obj){
+    // wrap in array if singleton
+    if(obj){
+        return (obj.constructor === Array ? obj : [obj]);
+    }
+    return [];
+}
+
+function first(objOrArray, predicate){
+    if(!objOrArray) return null;
+    let arr = asArray(objOrArray);
+    let filtered = arr.filter(predicate);
+    if(filtered.length > 0){
+        return filtered[0];
+    }
+    return null;
+}
+
 function log(text) {
     const logDiv = document.querySelector("#usermessages");
     const p = document.createElement("p");
@@ -640,4 +647,12 @@ function log(text) {
     console.log(text);
 }
 
-init();
+// determine the postMessage-style origin for a URL
+function getOrigin(url) {
+    let urlHolder = window.location;
+    if(url){
+        urlHolder = document.createElement('a');
+        urlHolder.href = url;
+    }
+    return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port: '');
+}
