@@ -22,43 +22,45 @@ window.addEventListener("message", receiveMessage, false);
 
 function init(){
 
-    // See what has been supplied on the query string:
-    // Is it an image service?
-    const imageQs = /image=(.*)/g.exec(window.location.search);
-    // Is it a Collection?
-    const collQs = /collection=(.*)/g.exec(window.location.search);
-    // Or is it a Manifest?
-    const manifestQs = /manifest=(.*)/g.exec(window.location.search)
+    const searchParams = new URLSearchParams(window.location.search);
+    const imageServiceParam = searchParams.get("image");
+    const collectionParam = searchParams.get("collection");
+    const manifestParam = searchParams.get("manifest");
 
     sourcesMap = {};
+    document.querySelector("h1").innerText = "(no resource on query string)";
 
-    if(imageQs && imageQs[1])
+    if(imageServiceParam)
     {
         // Load a IIIF Image Service directly, allow /info.json form or id
-        let imageServiceId = imageQs[1].replace(/\/info\.json$/, '');
+        let imageServiceId = imageServiceParam.replace(/\/info\.json$/, '');
         fetch(imageServiceId + "/info.json").then(response => response.json().then(info => {
             sourcesMap[imageServiceId] = info;
             selectResource(imageServiceId); // we can select it immediately, there's only one
         }));
-    }
-    else if(collQs && collQs[1])
-    {
-        // Load a IIIF Collection of Manifests
-        fetch(collQs[1]).then(response => response.json().then(sources => {
-            populateSourceList(sources); // There are multiple Manifests to choose from
-        }));
-    }
-    else if(manifestQs && manifestQs[1])
-    {
-        // Load a single Manifest
-        fetch(manifestQs[1]).then(response => response.json().then(manifest => {
-            sourcesMap[manifest.id] = manifest;
-            selectResource(manifest.id); // we can select it immediately
-        }));
-    }
-    else
-    {
-        document.querySelector("h1").innerText = "(no resource on query string)";
+    } else {
+        if(collectionParam)
+        {
+            // Load a IIIF Collection of Manifests
+            fetch(collectionParam).then(response => response.json().then(sources => {
+                populateSourceList(sources); // There are multiple Manifests to choose from
+            }));
+        }
+        if(manifestParam)
+        {
+            // Load a single Manifest
+            fetch(manifestParam).then(response => response.json().then(manifest => {
+                sourcesMap[manifest.id] = manifest;
+                selectResource(manifest.id); // we can select it immediately
+                const sourceList = document.getElementById("sourceList");
+                if(sourceList && sourceList.options?.length){
+                    for(let i=0; i<sourceList.options.length; i++){
+                        let opt = sourceList.options[i];
+                        opt.selected = opt.value == manifest.id;
+                    }
+                }
+            }));
+        }
     }
 }
 
@@ -76,7 +78,12 @@ function populateSourceList(sources){
     });
     sourceList.style.display = "block";
     sourceList.addEventListener("change", () => {
-        selectResource(sourceList.options[sourceList.selectedIndex].value);
+        let manifestId = sourceList.options[sourceList.selectedIndex].value;
+        selectResource(manifestId);
+        let searchParams = new URLSearchParams(window.location.search)
+        searchParams.set("manifest", manifestId);
+        let newRelativePathQuery = window.location.pathname + '?' + searchParams.toString();
+        history.pushState(null, '', newRelativePathQuery);
     });
     let reloadButton = document.getElementById("reloadSource");
     reloadButton.style.display = "block";
