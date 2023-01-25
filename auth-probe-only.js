@@ -175,11 +175,11 @@ function loadResource(sourceResource){
     authedResourceMap[authedResourceInfo.id] = authedResourceInfo;
 
     getProbeResponse(authedResourceInfo.id, null).then(probedResource => {
-        if(probedResource.status === 200 || probedResource.location){
+        if(probedResource.status === 200 || probedResource.alternate){
             // we have something to show, even if there's more available after auth
             renderResource(authedResourceInfo.id);
         }
-        if(probedResource.status === 401 || probedResource.location){
+        if(probedResource.status === 401 || probedResource.alternate){
             doAuthChain(probedResource).then(() => log("Auth Chain Completed"));
         }
     }).catch(e => {
@@ -206,7 +206,7 @@ function getAuthedResourceInfo(actualResource){
         accessServices: [],
         // These last props will change as the user goes through the auth flow.
         status: 0,
-        location: null,
+        alternate: null,
         error: null
     }
 
@@ -255,14 +255,15 @@ async function getProbeResponse(authedResourceId, token){
     const probeRequest = new Request(authedResource.probe, settings);
 
     authedResource.status = 0;
-    authedResource.location = null;
+    authedResource.alternate = null;
 
     try
     {
         let response = await fetch(probeRequest);
-        authedResource.status = response.status;
+        // authedResource.status = response.status; // no longer the HTTP response status
         let probeBody = await response.json();
-        authedResource.location = probeBody.location;
+        authedResource.status = probeBody.status;
+        authedResource.alternate = probeBody.alternate;
     }
     catch (error){
         authedResource.error = error;
@@ -275,17 +276,17 @@ async function getProbeResponse(authedResourceId, token){
 function renderResource(requestedResourceId){
     destroyViewer();
     const authedResource = authedResourceMap[requestedResourceId];
-    if(authedResource.location){
-        // For now, we will not handle the possibility of the location having further auth services
-        log("The probe offered a location of " + authedResource.location.id);
+    if(authedResource.alternate){
+        // For now, we will not handle the possibility of the alternate having further auth services
+        log("The probe offered a alternate of " + authedResource.alternate.id);
         log("This resource is most likely the degraded version of the one you asked for");
     }
     // if(authedResource.type === IMAGE_SERVICE_TYPE){
     if(ensureIsTypedImageService(authedResource)){
         log("This resource is an image service.");
-        if(authedResource.location){
-            log("Fetch the info.json for the 'degraded' resource at " + authedResource.location.id);
-            fetch(authedResource.location.id)
+        if(authedResource.alternate){
+            log("Fetch the info.json for the 'degraded' resource at " + authedResource.alternate.id);
+            fetch(authedResource.alternate.id)
                 .then(resp => resp.json())
                 .then(json => {
                     if(ensureIsTypedImageService(json))
@@ -301,7 +302,7 @@ function renderResource(requestedResourceId){
         log("The resource is of format " + authedResource.format);
         let viewerHTML;
         let isDash = (authedResource.format === "application/dash+xml");
-        let resourceUrl = authedResource.location?.id || authedResource.id;
+        let resourceUrl = authedResource.alternate?.id || authedResource.id;
         if(authedResource.type === "Video"){
             viewerHTML = `<video id='html5AV' src='${resourceUrl}' autoplay>Video here</video>`;
         } else if(authedResource.type === "Audio"){
@@ -390,7 +391,7 @@ async function attemptResourceWithToken(authService, resourceId){
                 return false;
             }
             log("info request with token resulted in " + authedResource.status);
-            if(authedResource.status === 200 || authedResource.location){
+            if(authedResource.status === 200 || authedResource.alternate){
                 renderResource(resourceId);
                 if(authedResource.status === 200){
                     return true;
