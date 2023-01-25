@@ -193,6 +193,9 @@ function getAuthedResourceInfo(actualResource){
     // returns an object that represents a content resource or image service and its probe service,
     // and info about the user's relationship with the resource.
     // You don't have to do it like this - this is an implementation detail.
+
+    // Update Jan 2023 - this makes an assumption that a resource could have many access services but only has one
+    // probe service. In the latest spec draft this is not the case
     const authResource = {
         originalResource: actualResource,
         // tidied up properties of the resource itself
@@ -210,8 +213,16 @@ function getAuthedResourceInfo(actualResource){
     authResource.id = actualResource["@id"] || actualResource["id"];
     authResource.type = actualResource["type"] || actualResource["@type"];
     authResource.format = actualResource["format"]; // often null
-    authResource.probe = first(actualResource["service"], s => s["type"] === PROBE_TYPE)?.id;
-    authResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
+
+    const probeService = first(actualResource["service"], s => s["type"] === PROBE_TYPE);
+    if(probeService){
+        authResource.probe = probeService.id;
+        authResource.accessServices = probeService["service"].filter(s => s["type"] === ACCESS_TYPE);
+    }
+
+    // old version with resource -> accessService -> probe structure
+    //authResource.probe = first(actualResource["service"], s => s["type"] === PROBE_TYPE)?.id;
+    //authResource.accessServices = asArray(actualResource["service"]).filter(s => s["type"] === ACCESS_TYPE);
 
     return authResource;
 }
