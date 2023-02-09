@@ -175,11 +175,11 @@ function loadResource(sourceResource){
     authedResourceMap[authedResourceInfo.id] = authedResourceInfo;
 
     getProbeResponse(authedResourceInfo.id, null).then(probedResource => {
-        if(probedResource.status === 200 || probedResource.alternate){
+        if(probedResource.status === 200 || probedResource.substitute){
             // we have something to show, even if there's more available after auth
             renderResource(authedResourceInfo.id);
         }
-        if(probedResource.status === 401 || probedResource.alternate){
+        if(probedResource.status === 401 || probedResource.substitute){
             doAuthChain(probedResource).then(() => log("Auth Chain Completed"));
         }
     }).catch(e => {
@@ -206,7 +206,7 @@ function getAuthedResourceInfo(actualResource){
         accessServices: [],
         // These last props will change as the user goes through the auth flow.
         status: 0,
-        alternate: null,
+        substitute: null,
         error: null
     }
 
@@ -255,7 +255,7 @@ async function getProbeResponse(authedResourceId, token){
     const probeRequest = new Request(authedResource.probe, settings);
 
     authedResource.status = 0;
-    authedResource.alternate = null;
+    authedResource.substitute = null;
 
     try
     {
@@ -263,7 +263,7 @@ async function getProbeResponse(authedResourceId, token){
         // authedResource.status = response.status; // no longer the HTTP response status
         let probeBody = await response.json();
         authedResource.status = probeBody.status;
-        authedResource.alternate = probeBody.alternate;
+        authedResource.substitute = probeBody.substitute;
     }
     catch (error){
         authedResource.error = error;
@@ -276,17 +276,17 @@ async function getProbeResponse(authedResourceId, token){
 function renderResource(requestedResourceId){
     destroyViewer();
     const authedResource = authedResourceMap[requestedResourceId];
-    if(authedResource.alternate){
-        // For now, we will not handle the possibility of the alternate having further auth services
-        log("The probe offered a alternate of " + authedResource.alternate.id);
+    if(authedResource.substitute){
+        // For now, we will not handle the possibility of the substitute having further auth services
+        log("The probe offered a substitute of " + authedResource.substitute.id);
         log("This resource is most likely the degraded version of the one you asked for");
     }
     // if(authedResource.type === IMAGE_SERVICE_TYPE){
     if(ensureIsTypedImageService(authedResource)){
         log("This resource is an image service.");
-        if(authedResource.alternate){
-            log("Fetch the info.json for the 'degraded' resource at " + authedResource.alternate.id);
-            fetch(authedResource.alternate.id)
+        if(authedResource.substitute){
+            log("Fetch the info.json for the 'degraded' resource at " + authedResource.substitute.id);
+            fetch(authedResource.substitute.id)
                 .then(resp => resp.json())
                 .then(json => {
                     if(ensureIsTypedImageService(json))
@@ -302,7 +302,7 @@ function renderResource(requestedResourceId){
         log("The resource is of format " + authedResource.format);
         let viewerHTML;
         let isDash = (authedResource.format === "application/dash+xml");
-        let resourceUrl = authedResource.alternate?.id || authedResource.id;
+        let resourceUrl = authedResource.substitute?.id || authedResource.id;
         if(authedResource.type === "Video"){
             viewerHTML = `<video id='html5AV' src='${resourceUrl}' autoplay>Video here</video>`;
         } else if(authedResource.type === "Audio"){
@@ -379,28 +379,36 @@ async function attemptResourceWithToken(authService, resourceId){
     let authedResource = authedResourceMap[resourceId];
     log("attempting token interaction for " + authedResource.id);
     let tokenService = first(authService.service, s => s.type === TOKEN_TYPE);
+    const result = {
+        success: false,
+        tokenService: tokenService,
+        tokenMessage: null
+    };
     if(tokenService){
         log("found token service: " + tokenService.id);
-        let tokenMessage = await openTokenService(tokenService);
-        if(tokenMessage && tokenMessage.accessToken){
+        result.tokenMessage = await openTokenService(tokenService);
+        // TODO - deal with the token error response, use the error messages returned or the ones on the token service if none,
+        // store them for later display
+        if(result.tokenMessage?.accessToken){
             try{
-                authedResource = await getProbeResponse(resourceId, tokenMessage.accessToken);
+                authedResource = await getProbeResponse(resourceId, result.tokenMessage.accessToken);
             } catch (e) {
                 log("attemptResourceWithToken - could not load " + resourceId);
                 log(e);
-                return false;
+                return result;
             }
             log("info request with token resulted in " + authedResource.status);
-            if(authedResource.status === 200 || authedResource.alternate){
+            if(authedResource.status === 200 || authedResource.substitute){
                 renderResource(resourceId);
                 if(authedResource.status === 200){
-                    return true;
+                    result.success = true;
+                    return result;
                 }
             }
         }
     }
     log("Didn't get a 200 info response.")
-    return false;
+    return result;
 }
 
 async function doAuthChain(authedResource){
@@ -411,6 +419,7 @@ async function doAuthChain(authedResource){
         return;
     }
     let lastAttempted = null;
+    let authFlowResult = null;
 
     // repetition of logic is left in these steps for clarity:
 
@@ -418,8 +427,8 @@ async function doAuthChain(authedResource){
     let serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_EXTERNAL);
     if(serviceToTry){
         lastAttempted = serviceToTry;
-        let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
-        if(success) return;
+        authFlowResult = await attemptResourceWithToken(serviceToTry, authedResource.id);
+        if(authFlowResult.success) return;
     }
 
     log("Looking for kiosk pattern");
@@ -429,8 +438,8 @@ async function doAuthChain(authedResource){
         let kioskWindow = openContentProviderWindow(serviceToTry);
         if(kioskWindow){
             await userInteractionWithContentProvider(kioskWindow);
-            let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
-            if(success) return;
+            authFlowResult = await attemptResourceWithToken(serviceToTry, authedResource.id);
+            if(authFlowResult.success) return;
         } else {
             log("Could not open kiosk window");
         }
@@ -443,14 +452,21 @@ async function doAuthChain(authedResource){
         let contentProviderWindow = await getContentProviderWindowFromModal(serviceToTry);
         if(contentProviderWindow){
             await userInteractionWithContentProvider(contentProviderWindow);
-            let success = await attemptResourceWithToken(serviceToTry, authedResource.id);
-            if(success) return;
+            authFlowResult = await attemptResourceWithToken(serviceToTry, authedResource.id);
+            if(authFlowResult.success) return;
+        } else {
+            log("User cancelled interaction with access service");
+            authFlowResult = {
+                // These strings don't belong on the services, because the reason is client-controlled
+                cancelHeading: { "en": [ "Interaction cancelled" ]},
+                cancelNote: { "en": [ "You cancelled a visit to the interactive service." ]}
+            }
         }
     }
 
     // nothing worked! Use the most recently tried service as the source of
     // messages to show to the user.
-    showOutOfOptionsMessages(lastAttempted);
+    showOutOfOptionsMessages(lastAttempted, authFlowResult);
 }
 
 function* MessageIdGenerator(){
@@ -574,11 +590,11 @@ function getContentProviderWindowFromModal(service){
         if(service.label){
             modal.querySelector("#csLabel").innerText = getDisplayText(service.label);
         }
-        if(service.header){
-            modal.querySelector("#csHeader").innerText = getDisplayText(service.header);
+        if(service.heading){
+            modal.querySelector("#csHeader").innerText = getDisplayText(service.heading);
         }
-        if(service.description){
-            modal.querySelector("#csDescription").innerText = getDisplayText(service.description, true);
+        if(service.note){
+            modal.querySelector("#csDescription").innerText = getDisplayText(service.note, true);
         }
         if(service.confirmLabel){
             modal.querySelector("#csConfirm").innerText = getDisplayText(service.confirmLabel);
@@ -587,16 +603,19 @@ function getContentProviderWindowFromModal(service){
     });
 }
 
-function showOutOfOptionsMessages(service){
+function showOutOfOptionsMessages(service, authFlowResult){
     hideModals();
     let modal = document.getElementById("failureModal");
     modal.querySelector(".close").onclick = (ev => hideModals());
     modal.querySelector("#failureClose").onclick = (ev => hideModals());
-    if(service.failureHeader){
-        modal.querySelector("#failureHeader").innerText = getDisplayText(service.failureHeader);
+    // Need to demonstrate the probe headline and note usage too.
+    let errorHeading = authFlowResult.cancelHeading || authFlowResult.tokenMessage?.heading || authFlowResult.tokenService?.errorHeading;
+    let errorNote = authFlowResult.cancelNote || authFlowResult.tokenMessage?.note || authFlowResult.tokenService?.errorNote;
+    if(errorHeading){
+        modal.querySelector("#errorHeading").innerText = getDisplayText(errorHeading);
     }
-    if(service.failureDescription){
-        modal.querySelector("#failureDescription").innerText = getDisplayText(service.failureDescription, true);
+    if(errorNote){
+        modal.querySelector("#errorNote").innerText = getDisplayText(errorNote, true);
     }
     modal.style.display = "block";
 }
