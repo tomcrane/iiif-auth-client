@@ -6,7 +6,7 @@ const MANIFEST_TYPE = "Manifest";
 const IMAGE_SERVICE_PROTOCOL = "http://iiif.io/api/image";
 const IMAGE_SERVICE_TYPE = 'ImageService2'; // for the purposes of this demo all image services will be given this type if they don't come with a type
 
-const PROFILE_INTERACTIVE = 'interactive';
+const PROFILE_INTERACTIVE = 'active';
 const PROFILE_KIOSK = 'kiosk';
 const PROFILE_EXTERNAL = 'external';
 
@@ -445,7 +445,7 @@ async function doAuthChain(authedResource){
         }
     }
 
-    log("Looking for interactive pattern");
+    log("Looking for active pattern");
     serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_INTERACTIVE);
     if(serviceToTry){
         lastAttempted = serviceToTry;
@@ -459,7 +459,7 @@ async function doAuthChain(authedResource){
             authFlowResult = {
                 // These strings don't belong on the services, because the reason is client-controlled
                 cancelHeading: { "en": [ "Interaction cancelled" ]},
-                cancelNote: { "en": [ "You cancelled a visit to the interactive service." ]}
+                cancelNote: { "en": [ "You cancelled a visit to the active service." ]}
             }
         }
     }
@@ -533,7 +533,7 @@ function userInteractionWithContentProvider(contentProviderWindow){
         // It can but wait.
         const poll = window.setInterval(() => {
             if (contentProviderWindow.closed) {
-                log("interactive service window is now closed");
+                log("active service window is now closed");
                 window.clearInterval(poll);
                 resolve();
             }

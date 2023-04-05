@@ -432,7 +432,7 @@ async function doAuthChain(authedResource){
         }
     }
 
-    log("Looking for interactive pattern");
+    log("Looking for active pattern");
     serviceToTry = first(authedResource.accessServices, s => s.profile === PROFILE_INTERACTIVE);
     if(serviceToTry){
         lastAttempted = serviceToTry;
