@@ -1,6 +1,6 @@
 const ACCESS_TYPE = "AuthAccessService2";
 const PROBE_TYPE = "AuthProbeService2"; 
-const TOKEN_TYPE = "AuthTokenService2";
+const TOKEN_TYPE = "AuthAccessTokenService2";
 const MANIFEST_TYPE = "Manifest";
 
 const IMAGE_SERVICE_PROTOCOL = "http://iiif.io/api/image";
