@@ -97,7 +97,7 @@ async function doAuthChain(infoResponse){
     let contentProviderWindow = await getContentProviderWindowFromModal(authService);
     if(contentProviderWindow){
         await userInteractionWithContentProvider(contentProviderWindow);
-        let success = await attemptImageWithToken(authService, infoResponse.requestedUri);
+        let success = await attemptImageWithToken(authService, infoResponse.requestedUri, false);
         if(success) return;
     }
 
@@ -105,15 +105,37 @@ async function doAuthChain(infoResponse){
 }
 
 
-async function attemptImageWithToken(authService, imageUri){
+async function attemptImageWithToken(authService, imageUri, isRetry){
     log("Attempting token interaction for " + authService.id + " at " + authService.tokenService);
-    let tokenMessage = await openTokenService(authService.tokenService);
+    log("isRetry: " + isRetry);
+    let tokenMessage = await openTokenService(authService.tokenService, isRetry);
     if(tokenMessage && tokenMessage.accessToken){
         let withTokenInfoResponse = await loadServiceForImage(imageUri, tokenMessage.accessToken);
         log("Info request with token resulted in " + withTokenInfoResponse.status);
         if(withTokenInfoResponse.status === 200){
             renderImage(imageUri);
             return true;
+        }
+    } else if (tokenMessage.error && tokenMessage.error == "missingCredentials"){
+        if(tokenMessage.userInteractionState == "requestStorageAccessSucceeded" && tokenMessage.frameHasStorageAccess){
+            log("We've just been given storage access. Try the token service again.");
+            let success = await attemptImageWithToken(authService, imageUri, true);
+            if(success){
+                log("Second time round we got a working token!")
+                return true;
+            }
+        } else if (tokenMessage.userInteractionState == "requestStorageAccessFailed"){
+            log("We failed to obtain storage access, let's send the user to really interact with the server in a first party context")
+            let firstPartyWindow = window.open(authService.storageAccessInteractionPage);
+            await userInteractionWithContentProvider(firstPartyWindow);
+            let success = await attemptImageWithToken(authService, imageUri, true);
+            if(success) {
+                log("Second time round trying the image with a token succeeded.")
+                return true;
+            }
+        } else if (tokenMessage.userInteractionState == "stillNoCredentials") {
+            log("Server is still not seeing user's cookies.");
+            alert("Server is still not seeing your cookies. Do you have _ALL_ third party cookies disabled?");
         }
     }
 
@@ -140,8 +162,8 @@ function* MessageIdGenerator(){
 
 const messageIds = MessageIdGenerator();
 
-function openTokenService(tokenService){
-    // use a Promise across a postMessage call. Discuss...
+function openTokenService(tokenService, isRetry){
+    // using a Promise across a postMessage call. Discuss... is that an OK thing to do?
     return new Promise((resolve, reject) => {
         // if necessary, the client can decide not to trust this origin
         const serviceOrigin = getOrigin(tokenService);
@@ -151,12 +173,12 @@ function openTokenService(tokenService){
             "reject": reject,
             "serviceOrigin": serviceOrigin
         };
-        let tokenUrl = tokenService + "?messageId=" + messageId + "&origin=" + getOrigin();
+        let tokenUrl = tokenService + "?messageId=" + messageId + "&origin=" + getOrigin() + "&isRetry=" + isRetry;
         log("Setting the iframe src to " + tokenUrl);
         document.getElementById("commsFrame").src = tokenUrl;
 
         // reject any unhandled messages after a configurable timeout
-        const postMessageTimeout = 5000;
+        const postMessageTimeout = 60000; // increase this to 1 minute. Maybe indefinite?
         setTimeout(() => {
             if(messages[messageId]){
                 messages[messageId].reject(
@@ -171,14 +193,37 @@ function openTokenService(tokenService){
 // responds to messages initiated by openTokenService(..)
 // Completes promises made in openTokenService(..)
 function receiveMessage(event) {
+
+    // This is not part of the normal flow, just added it get log messages from the frame displayed in our test viewer.
+    if(event.data.log){
+        log("POSTMESSAGE IFRAME LOG: " + event.data.log, "33a");
+        return;
+    }
+
+    // We've received a message from the postMessage iframe asking us to make it visible to the user
+    if("show" === event.data.userInteractionRequest){
+        showServerInteractionModal();
+        return;
+    }
+
+    // We've received a message from the postMessage iframe saying that the user clicked within the iframe
+    if("clicked" === event.data.userInteractionRequest){
+        hideModals(); // close the popup
+        return;
+    }
+
+    // Normal flow resumes
     log("PostMessage Event received, origin=" + event.origin);
     log(JSON.stringify(event.data));
     // two kinds of message here - the token original, and the "show me to request storage access"
     if(event.data.hasOwnProperty("messageId")){
         log("Received message with id " + event.data.messageId);
         let message = messages[event.data.messageId];
+
+
         if(message && event.origin == message.serviceOrigin)
         {
+            // Have we just received a token, or have
             // Any message with a messageId is a success for our demo
             log("We trust that we triggered this message, so resolve")
             message.resolve(event.data);
@@ -268,6 +313,13 @@ function showFailureMessage(authService){
     modal.style.display = "block";
 }
 
+function showServerInteractionModal(){
+    hideModals();
+    let modal = document.getElementById("serverInteractionModal");
+    modal.querySelector(".close").onclick = (ev => hideModals());
+    modal.style.display = "block";
+}
+
 function hideModals(){
     let modals = document.querySelectorAll(".modal");
     modals.forEach(m => {
@@ -278,9 +330,10 @@ function hideModals(){
     });
 }
 
-function log(text) {
+function log(text, color) {
     let logDiv = document.querySelector("#log");
     let p = document.createElement("p");
+    if(color) p.setAttribute("style", "color:#" + color);
     p.innerText = " - " + text;
     logDiv.appendChild(p);
     logDiv.scrollTop = logDiv.scrollHeight;

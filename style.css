@@ -15,12 +15,10 @@ body {
     background-color: #888888;
 }
 
-
 #viewer img {
     width: 95%;
     margin:5px;
 }
-
 
 #log {
     width:47vw;
@@ -75,7 +73,6 @@ h1 {
 }
 
 #commsFrame {
-    display:none;
-    width:300px;
-    height:100px;
+    width: 50vw;
+    height: 25vh;
 }

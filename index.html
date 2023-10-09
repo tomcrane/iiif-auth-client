@@ -12,20 +12,21 @@
 
     <h3>(load an image)</h3>
 
-    <button id="loadOpen" class="loadbutton"
-            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/open.jpg">Show open image</button> |
-    <button id="loadProtected" class="loadbutton"
-            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/protected.jpg">Show protected image</button>
+    <button class="loadbutton"
+            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/open.jpg">Open image, old flow</button> |
+    <button class="loadbutton"
+            data-iiif-content="https://iiif-auth-server.herokuapp.com/img/protected.jpg">Protected image, old flow</button> |
+    <button class="loadbutton"
+            data-iiif-content="https://iiif-auth-server-privacy.herokuapp.com/img/open.jpg">Open image, new flow</button> |
+    <button class="loadbutton"
+            data-iiif-content="https://iiif-auth-server-clickthrough.herokuapp.com/img/clickthrough.jpg">Clickthrough image, new flow </button> |
+    <button class="loadbutton"
+            data-iiif-content="https://iiif-auth-server-privacy.herokuapp.com/img/protected.jpg">Protected image, new flow login</button>
 
     <div id="wrapper">
         <div id="viewer"></div>
         <div id="log"></div>
     </div>
-
-    <iframe id="commsFrame" width="100px" height="60px"
-            sandbox="allow-storage-access-by-user-activation
-                 allow-scripts
-                 allow-same-origin"></iframe>
 
     <div id="beforeOpenCookieServiceModal" class="modal">
         <div class="modal-content">
@@ -36,6 +37,13 @@
             <hr/>
             <button id="csCancel">Cancel</button><!-- string not provided by service -->
             <button id="csConfirm">*confirmLabel*</button>
+        </div>
+    </div>
+
+    <div id="serverInteractionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <iframe id="commsFrame" sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin"></iframe>
         </div>
     </div>
 
