@@ -692,7 +692,6 @@ function getOrigin(url) {
     let urlHolder = window.location;
     if(url){
         urlHolder = document.createElement('a');
-        urlHolder = document.createElement('a');
         urlHolder.href = url;
     }
     return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port: '');
