@@ -50,6 +50,7 @@ function init(){
         {
             // Load a single Manifest
             fetch(manifestParam).then(response => response.json().then(manifest => {
+                expandServices(manifest);
                 sourcesMap[manifest.id] = manifest;
                 selectResource(manifest.id); // we can select it immediately
                 const sourceList = document.getElementById("sourceList");
@@ -103,6 +104,7 @@ function selectResource(resourceId){
     if(sourceResource.type === MANIFEST_TYPE && !sourceResource.hasOwnProperty("items")){
         // This is still the reference to the Manifest from the original collection
         fetch(sourceResource.id).then(response => response.json()).then(data => {
+            expandServices(data);
             sourcesMap[resourceId] = data;
             selectResource(resourceId);
         });
@@ -690,7 +692,56 @@ function getOrigin(url) {
     let urlHolder = window.location;
     if(url){
         urlHolder = document.createElement('a');
+        urlHolder = document.createElement('a');
         urlHolder.href = url;
     }
     return urlHolder.protocol + "//" + urlHolder.hostname + (urlHolder.port ? ':' + urlHolder.port: '');
+}
+
+function expandServices(manifest){
+    if(!manifest.hasOwnProperty("services")) return;
+    let serviceMap = Object.fromEntries(manifest.services.map(svc => [(svc.id || svc["@id"]), svc]));
+    traverseForServices(manifest, serviceMap);
+}
+
+function traverseForServices(obj, serviceMap) {
+    for (let key in obj) {
+        if(key == "services") continue;
+
+        if (typeof obj[key] === "object") {
+            if (Array.isArray(obj[key])) {
+                for (let i = 0; i < obj[key].length; i++) {
+                    let replacement = getExpandedService(obj[key][i], serviceMap);
+                    if(replacement){
+                        obj[key][i] = replacement;
+                    } else {
+                        traverseForServices(obj[key][i], serviceMap);
+                    }
+                }
+            } else {
+                let replacement = getExpandedService(obj[key], serviceMap);
+                if(replacement){
+                    obj[key] = replacement;
+                } else {
+                    traverseForServices(obj[key], serviceMap);
+                }
+            }
+        }
+    }
+}
+
+function getExpandedService(possibleServiceRef, serviceMap){
+    // Only going to look for valid P3 references now:
+    // { id: xxx, type: yyy }
+    if(typeof possibleServiceRef === "object" && !Array.isArray(possibleServiceRef)){
+        let keys = Object.keys(possibleServiceRef);
+        if(keys.length == 2 && keys.includes("id") && keys.includes("type")){
+            let fullService = serviceMap[possibleServiceRef.id];
+            if(fullService){
+                log("replacing reference: " + JSON.stringify(possibleServiceRef));
+            }
+            return fullService;
+        }
+    }
+    return null;
 }
