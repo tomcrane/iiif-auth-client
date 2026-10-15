@@ -1,0 +1,64 @@
+name: Docker image
+
+# Builds the Docker image for every pull request and push, to check it still builds.
+# Pushes it to Amazon ECR from master and v* tags, once the AWS_ROLE_ARN, AWS_REGION and
+# ECR_REPOSITORY repository variables are set - see "Publishing to Amazon ECR" in README.md.
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # lets the job get an OIDC token to assume the AWS role
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PUSH: ${{ vars.AWS_ROLE_ARN != '' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        if: env.PUSH == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        if: env.PUSH == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Work out image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.ecr.outputs.registry || 'local' }}/${{ vars.ECR_REPOSITORY || 'iiif-auth-client' }}
+          tags: |
+            type=sha
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build, and push to ECR if configured
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ vars.DOCKER_PLATFORMS || 'linux/amd64' }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
