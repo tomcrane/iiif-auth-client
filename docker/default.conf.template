@@ -1,0 +1,21 @@
+# nginx config for the client container. The official nginx image fills in ${CLIENT_BASE_PATH}
+# from the environment when the container starts.
+server {
+    listen       8080;
+    server_name  _;
+
+    # Health check for the load balancer
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # The client is entirely static. CLIENT_BASE_PATH (default /) lets it be served under a path
+    # on a shared domain, e.g. /client/ - load balancers like ALB route by path without stripping it.
+    location ^~ ${CLIENT_BASE_PATH} {
+        alias /usr/share/nginx/html/;
+        index index.html;
+        add_header Cache-Control "no-cache";
+    }
+}

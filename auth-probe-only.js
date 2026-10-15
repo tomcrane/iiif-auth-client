@@ -4,7 +4,7 @@ const TOKEN_TYPE = "AuthAccessTokenService2";
 const MANIFEST_TYPE = "Manifest";
 
 const IMAGE_SERVICE_PROTOCOL = "http://iiif.io/api/image";
-const IMAGE_SERVICE_TYPE = 'ImageService2'; // for the purposes of this demo all image services will be given this type if they don't come with a type
+const IMAGE_SERVICE_TYPE = 'ImageService3'; // for the purposes of this demo all image services will be given this type if they don't come with a type
 
 const PROFILE_INTERACTIVE = 'active';
 const PROFILE_KIOSK = 'kiosk';
@@ -133,13 +133,13 @@ function selectMediaResource(sourceResource){
         // just take the first resource on the first canvas, but look for renderings too
         // Only accept v3 Manifests
         const canvas = sourceResource.items[0];
-        // we want to demo auth on PDFs, etc., so if this special behavior is present we'll
-        // assume the authed resource is a rendering, and not in the body of a painting anno.
+        // we want to demo auth on PDFs, etc., which can't be painted on a canvas. If the canvas has a
+        // rendering with a probe service, we'll assume that is the authed resource, rather than the
+        // (placeholder) body of the painting anno.
         // A real viewer should deal with auth on any resource, but our special viewer only
         // deals with one authed resource per source.
-        if(canvas["behavior"] && canvas["behavior"].includes("placeholder")){
-            res = first(canvas["rendering"], r => r["behavior"] && r["behavior"].includes("original"));
-        } else {
+        res = first(canvas["rendering"], r => first(r["service"], s => s["type"] === PROBE_TYPE));
+        if(!res){
             res = canvas.items[0].items[0].body;
         }
         if(res["service"]){
@@ -361,13 +361,15 @@ function makeDownloadLink(imageService){
     let w = imageService["width"];
     let h = imageService["height"]
     let dims = "(" + w + " x " + h + ")";
-    let maxWAssertion = first(imageService["profile"], pf => pf["maxWidth"]);
-    if(maxWAssertion){
-        dims += " (max width is " + maxWAssertion["maxWidth"] + ")";
+    // Image API 3 has maxWidth at the top level; Image API 2 has it in the profile
+    let maxWidth = imageService["maxWidth"] || first(imageService["profile"], pf => pf["maxWidth"])?.["maxWidth"];
+    if(maxWidth){
+        dims += " (max width is " + maxWidth + ")";
     }
     largeDownload.innerText = "Download large image: " + dims;
     const id = (imageService.id || imageService["@id"]);
-    largeDownload.setAttribute("href", id + "/full/full/0/default.jpg")
+    const fullSize = imageService.type === "ImageService2" ? "full" : "max";
+    largeDownload.setAttribute("href", id + "/full/" + fullSize + "/0/default.jpg")
 }
 
 function makeContentResourceLink(href, text){
@@ -640,16 +642,15 @@ function ensureIsTypedImageService(resource){
         resource.type = type; // in case @type
         return true;
     }
-    if(resource.protocol && resource.protocol === IMAGE_SERVICE_PROTOCOL){
-        resource.type = IMAGE_SERVICE_TYPE;
+    let profile = asArray(resource.profile)[0];
+    let isImageService = resource.protocol === IMAGE_SERVICE_PROTOCOL ||
+        (typeof profile === "string" && profile.includes("iiif.io/api/image"));
+    if(isImageService){
+        // Image API 2 services don't have a type, so work out which version this is
+        let isV2 = asArray(resource["@context"]).includes("http://iiif.io/api/image/2/context.json") ||
+            (typeof profile === "string" && profile.includes("iiif.io/api/image/2"));
+        resource.type = isV2 ? "ImageService2" : IMAGE_SERVICE_TYPE;
         return true;
-    }
-    if(resource.profile){
-        let profile = asArray(resource.profile);
-        if(profile[0] && profile[0].contains("iiif.io/api/image")){
-            resource.type = IMAGE_SERVICE_TYPE;
-            return true;
-        }
     }
     return false;
 }

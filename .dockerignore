@@ -1,0 +1,8 @@
+.git
+.idea
+.vscode
+Dockerfile
+.dockerignore
+*.md
+*.PNG
+probe-auth-flows
