@@ -42,6 +42,12 @@ docker run -p 8080:8080 -e CLIENT_BASE_PATH=/client/ iiif-auth-client
 
 `/healthz` returns 200 for load balancer health checks.
 
-## Publishing to Amazon ECR
+## Publishing the Docker image
 
-`.github/workflows/docker.yml` builds the image for every pull request and push. Once it's configured, it pushes the image to ECR from `master` and `v*` tags. It's the same workflow as iiif-auth-server's; see [Publishing to Amazon ECR](https://github.com/tomcrane/iiif-auth-server#publishing-to-amazon-ecr) in that repo's README for the AWS and GitHub setup, which covers both repositories.
+`.github/workflows/docker.yml` builds the image for every pull request and push. From `master` and `v*` tags it pushes the image to the GitHub Container Registry:
+
+```
+docker run -p 8080:8080 ghcr.io/tomcrane/iiif-auth-client
+```
+
+...and to Amazon ECR, once that's configured. It's the same workflow as iiif-auth-server's; see [Publishing the Docker image](https://github.com/tomcrane/iiif-auth-server#publishing-the-docker-image) in that repo's README for the details and the AWS setup, which covers both repositories.
